@@ -69,7 +69,26 @@ def control_button_centers() -> list[dict]:
     ]
 
 
+def dedupe_zones_by_id(zones: list[dict]) -> dict[str, dict]:
+    """Mehrere Zonen (verschiedene Positionen) koennen dieselbe id teilen -- dann
+    sollen sie denselben Code/Text bekommen (z.B. vier Ecken, die alle dieselbe
+    Erklaerung ausloesen). YAML erlaubt aber keine doppelten Schluessel, darum hier
+    auf den ersten (nicht-leeren) Text pro id reduzieren, mit Warnung bei Konflikt."""
+    by_id: dict[str, dict] = {}
+    for z in zones:
+        if z["id"] not in by_id:
+            by_id[z["id"]] = z
+        else:
+            prev_text = by_id[z["id"]]["text"].strip()
+            new_text = z["text"].strip()
+            if new_text and prev_text and new_text != prev_text:
+                print(f"Warnung: Zone-ID '{z['id']}' kommt mehrfach mit unterschiedlichem "
+                      f"Text vor -- verwende den ersten ('{prev_text[:40]}...').")
+    return by_id
+
+
 def build_yaml(data: dict) -> str:
+    unique = dedupe_zones_by_id(data["zones"])
     lines = [
         f"product-id: {data['productId']}",
         f"comment: {json.dumps(data.get('title', 'Tiptoi-Projekt'))}",
@@ -77,12 +96,12 @@ def build_yaml(data: dict) -> str:
         "",
         "speak:",
     ]
-    for z in data["zones"]:
+    for z in unique.values():
         text = z["text"].strip() or z["label"] or z["id"]
         lines.append(f"  {z['id']}: {json.dumps(text)}")
     lines.append("")
     lines.append("scripts:")
-    for z in data["zones"]:
+    for z in unique.values():
         lines.append(f"  {z['id']}: P({z['id']})")
     return "\n".join(lines) + "\n"
 

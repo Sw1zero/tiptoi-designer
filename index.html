@@ -278,11 +278,29 @@ function pointerToPageCoords(evt) {
   return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
 }
 
+function cellIndex(x, y, step) {
+  return { cx: Math.floor((x - imgRect.x) / step), cy: Math.floor((y - imgRect.y) / step) };
+}
+
+// Trifft, wenn Klick in derselben Rasterzelle liegt wie eine bestehende Zone --
+// nicht nur im kleinen Kreis um ihre Mitte. Sonst erkennt ein Klick in die Ecke
+// einer belegten Zelle den Treffer nicht und legt eine zweite, exakt überlappende
+// Zone darüber an.
 function zoneAt(x, y) {
-  const r = markerRadius();
+  const step = codeSizePx();
+  if (!imgRect || step <= 3) {
+    const r = markerRadius();
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const z = zones[i];
+      if (Math.hypot(z.x - x, z.y - y) <= r) return z;
+    }
+    return null;
+  }
+  const c = cellIndex(x, y, step);
   for (let i = zones.length - 1; i >= 0; i--) {
     const z = zones[i];
-    if (Math.hypot(z.x - x, z.y - y) <= r) return z;
+    const zc = cellIndex(z.x, z.y, step);
+    if (zc.cx === c.cx && zc.cy === c.cy) return z;
   }
   return null;
 }
@@ -297,9 +315,13 @@ function snapToCellCenter(v, origin, step) {
   return origin + (Math.floor((v - origin) / step) + 0.5) * step;
 }
 
+let mouseDownAt = null; // {x,y} -- um Klick (ohne Bewegung) von echtem Ziehen zu unterscheiden
+const DRAG_THRESHOLD = 4; // px in Seiten-Koordinaten
+
 canvas.addEventListener('mousedown', e => {
   if (!image) return;
   const { x, y } = pointerToPageCoords(e);
+  mouseDownAt = { x, y };
   const hit = zoneAt(x, y);
   if (hit) {
     dragging = hit;
@@ -329,8 +351,24 @@ window.addEventListener('mousemove', e => {
   dragging.y = Math.round(y);
   render();
 });
-window.addEventListener('mouseup', () => {
-  if (dragging && document.getElementById('snapGrid').checked) {
+window.addEventListener('mouseup', e => {
+  if (!dragging) { mouseDownAt = null; return; }
+  const { x, y } = pointerToPageCoords(e);
+  const moved = mouseDownAt ? Math.hypot(x - mouseDownAt.x, y - mouseDownAt.y) : 999;
+  const wasExistingZone = zones.includes(dragging) && dragging.id !== undefined && mouseDownAt &&
+    zoneAt(mouseDownAt.x, mouseDownAt.y) === dragging;
+
+  if (moved < DRAG_THRESHOLD && wasExistingZone) {
+    // Reiner Klick auf eine bestehende Zone (kein Ziehen) -- fragen statt stillschweigend
+    // etwas zu überlagern oder zu verschieben.
+    const name = dragging.label || dragging.id;
+    if (confirm(`Zone "${name}" löschen?\n\nOK = löschen. Abbrechen = unverändert lassen (Text unten in der Liste bearbeiten).`)) {
+      zones = zones.filter(z => z !== dragging);
+      render();
+    } else {
+      scrollZoneIntoView(dragging);
+    }
+  } else if (document.getElementById('snapGrid').checked) {
     const step = codeSizePx();
     if (step > 3) {
       dragging.x = snapToCellCenter(dragging.x, imgRect.x, step);
@@ -339,8 +377,19 @@ window.addEventListener('mouseup', () => {
     }
   }
   dragging = null;
+  mouseDownAt = null;
   renderList();
 });
+
+function scrollZoneIntoView(z) {
+  const idx = zones.indexOf(z);
+  const el = zoneList.children[idx];
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const ta = el.querySelector('[data-f=text]');
+    if (ta) ta.focus();
+  }
+}
 
 function renderList() {
   zoneList.innerHTML = '';

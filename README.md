@@ -8,10 +8,19 @@ Tiptoi-Lernspiele. Läuft komplett lokal im Browser, kein Server nötig.
 1. `index.html` öffnen (lokal per Doppelklick, oder gehostet z.B. über GitHub Pages)
 2. Bild laden (Drag & Drop oder Dateiauswahl) — wird automatisch in die A4-Seite
    eingepasst (contain-fit, Seitenverhältnis bleibt erhalten, kein Verzerren)
-3. Auf das Bild klicken, um eine Zone zu setzen (rastet standardmässig am
-   Raster ein). Marker lassen sich per Drag verschieben.
+3. Auf das Bild klicken, um eine Zone zu setzen (rastet standardmässig auf die
+   Mitte der angeklickten Rasterzelle ein). Marker lassen sich per Drag
+   verschieben. Ein reiner Klick (ohne Ziehen) auf eine bestehende Zone fragt
+   nach, ob sie gelöscht werden soll — es wird nie stillschweigend eine zweite
+   Zone darüber gelegt.
 4. Pro Zone: Label (kurz, sichtbar) und Erklärtext (wird später gesprochen) eintragen
 5. "Layout als JSON herunterladen"
+
+**Mehrere Zonen mit demselben Code:** Zwei oder mehr Zonen können dieselbe ID
+bekommen (im Feld neben der Nummer in der Zonen-Liste) — sie bekommen dann
+denselben gedruckten Code und lösen dieselbe Erklärung aus, nur an
+verschiedenen Stellen im Bild platziert (z.B. vier gleichwertige Ecken eines
+Diagramms).
 
 Die Seite ist immer A4 bei 300dpi, unten fest eine Fussleiste mit
 **Start / Wiederholen / Stopp** (plus ein reservierter, noch ungenutzter
