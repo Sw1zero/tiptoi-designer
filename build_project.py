@@ -19,6 +19,7 @@ Aufruf:
 import json
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -103,6 +104,57 @@ def build_yaml(data: dict) -> str:
     for f in fields:
         lines.append(f"  {f['id']}: P({f['id']})")
     return "\n".join(lines) + "\n"
+
+
+def save_lossless_pdf(img: Image.Image, path: Path, resolution: float):
+    """Pillow betten RGB-Bilder in PDFs IMMER als JPEG ein (DCTDecode), ohne
+    Umgehungsmöglichkeit -- das reicht völlig aus, um das feine OID-Punktmuster
+    kaputtzukomprimieren (verifiziert: führte zu komplettem Leseversagen, nicht
+    nur bei kleinen Codes). Darum hier ein minimaler, selbstgeschriebener
+    PDF-Writer mit echtem FlateDecode (verlustfrei, wie PNG). Byte-genau
+    gegen das Quellbild verifiziert (zlib.decompress(stream) == img.tobytes())."""
+    img = img.convert("RGB")
+    w, h = img.size
+    compressed = zlib.compress(img.tobytes(), 9)
+    pt_w, pt_h = w * 72.0 / resolution, h * 72.0 / resolution
+    content = f"q {pt_w:.4f} 0 0 {pt_h:.4f} 0 0 cm /Im0 Do Q\n".encode("ascii")
+
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+
+    def write_obj(body: bytes, stream: bytes | None = None):
+        offsets.append(len(out))
+        n = len(offsets) - 1
+        out.extend(f"{n} 0 obj\n".encode("ascii"))
+        out.extend(body)
+        if stream is not None:
+            out.extend(b"\nstream\n")
+            out.extend(stream)
+            out.extend(b"\nendstream")
+        out.extend(b"\nendobj\n")
+
+    write_obj(b"<< /Type /Catalog /Pages 2 0 R >>")
+    write_obj(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    write_obj(
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pt_w:.4f} {pt_h:.4f}] "
+        f"/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>".encode("ascii")
+    )
+    write_obj(
+        (f"<< /Type /XObject /Subtype /Image /Width {w} /Height {h} "
+         f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Interpolate false "
+         f"/Filter /FlateDecode /Length {len(compressed)} >>").encode("ascii"),
+        stream=compressed,
+    )
+    write_obj(f"<< /Length {len(content)} >>".encode("ascii"), stream=content)
+
+    xref_offset = len(out)
+    n_objs = len(offsets)
+    out.extend(f"xref\n0 {n_objs}\n".encode("ascii"))
+    out.extend(b"0000000000 65535 f \n")
+    for i in range(1, n_objs):
+        out.extend(f"{offsets[i]:010d} 00000 n \n".encode("ascii"))
+    out.extend(f"trailer\n<< /Size {n_objs} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("ascii"))
+    path.write_bytes(out)
 
 
 def paste_code(base: Image.Image, code_path: Path, cx: int, cy: int):
@@ -193,8 +245,8 @@ def main():
     print(f"geschrieben: {out_png} (A4 @ {page_dpi}dpi)")
 
     out_pdf = out_dir / "druckvorlage.pdf"
-    page.save(out_pdf, resolution=page_dpi)
-    print(f"geschrieben: {out_pdf}")
+    save_lossless_pdf(page, out_pdf, page_dpi)
+    print(f"geschrieben: {out_pdf} (verlustfrei, kein JPEG)")
 
     # Nur zur Kontrolle vorm Drucken: dieselbe Seite mit roten Kaestchen + Beschriftung,
     # damit man sieht wo die Codes effektiv liegen. NICHT drucken/ausgeben.

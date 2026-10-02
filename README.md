@@ -88,7 +88,11 @@ Erzeugt im Ausgabe-Ordner:
   Seitengrösse fest einprogrammiert. Bei 100% drucken, nicht "An Seite
   anpassen", sonst werden die Codes mitskaliert und unlesbar. Die Codes
   liegen unauffällig direkt auf dem Bild (echte Transparenz, kein weisser
-  Kasten drumherum) — genau wie bei echten Tiptoi-Büchern
+  Kasten drumherum) — genau wie bei echten Tiptoi-Büchern. Das Bild wird
+  **verlustfrei** eingebettet (eigener PDF-Writer, kein JPEG) — Pillow
+  komprimiert PDF-Bilder sonst immer verlustbehaftet, was das feine
+  Punktmuster unbrauchbar macht (führte zu komplettem Leseversagen, auch bei
+  grossen Codes wie START)
 - `druckvorlage.png` — gleiches Bild, falls du es weiterbearbeiten willst
 - `kontrolle-mit-markierungen.png` — **nur zur Kontrolle vor dem Drucken**,
   zeigt dieselben Stellen mit roten Kästen + "Feld N"-Beschriftung. Nicht
