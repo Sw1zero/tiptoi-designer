@@ -23,7 +23,9 @@ Jedes Feld bekommt automatisch eine Nummer (Feld 1, Feld 2, …) basierend auf
 seiner Position in der Liste — kein manuelles Benennen nötig, und nach dem
 Löschen eines Felds rücken die folgenden Nummern einfach nach.
 
-Die Seite ist immer A4 bei 300dpi, unten fest eine Fussleiste mit
+Die Seite ist immer A4 bei 600dpi (Community-Erfahrung: 300dpi druckt die
+Punktmuster zu grob/unzuverlässig, siehe "Druck-Tipps" unten), unten fest
+eine Fussleiste mit
 **Start / Wiederholen / Stopp** (plus ein reservierter, noch ungenutzter
 vierter Platz für einen künftigen Modus-Button, siehe unten). Die JSON-Datei
 enthält die exakten Pixelkoordinaten jeder Position auf dieser Seite — kein
@@ -51,8 +53,24 @@ Tipp nicht exakt in der Mitte zuverlässig). Das heisst:
   (mm) erhöhen — tttool kachelt das Motiv automatisch weiter, kein separates
   Raster-Feature nötig
 - tttool verweigert die Erzeugung ("Dots too large"), wenn die effektive
-  Auflösung unter ca. 210dpi fällt. `build_project.py` prüft das vorher und
-  sagt dir direkt, wie viel du die Zielbreite verkleinern musst
+  Auflösung unter ca. 210dpi fällt. `build_project.py` prüft das vorher
+- `build_project.py` liest die dpi aus `layout.json` (Feld `pageDpi`) und
+  wählt automatisch die grösstmögliche sichere Punktdicke dafür (`pixel-size`,
+  Community-Erfahrung: dicker = zuverlässiger beim Drucken). Alte Exporte mit
+  niedrigerer dpi bleiben dadurch gültig
+
+### Druck-Tipps (Community-Erfahrung aus der tttool-Mailingliste)
+
+- **Laserdrucker sind deutlich zuverlässiger als Tintenstrahler** — wenn
+  verfügbar, bevorzugen
+- Beim Drucken unbedingt **100%/Originalgrösse**, nie "An Seite anpassen"
+  oder automatische Bildverbesserung des Druckertreibers
+- Funktioniert ein Ausdruck nicht zuverlässig: zuerst einen Testdruck mit dem
+  Stift prüfen, bevor eine ganze Auflage gedruckt wird
+- Bei hartnäckigen Problemen: manche berichten von einem zweistufigen Druck
+  (erst die Illustration, dann in einem zweiten Durchgang nur die Codes mit
+  einem separaten Schwarzweiss-Laserdrucker) — für die meisten Fälle aber
+  nicht nötig
 
 ## Weiterverarbeitung zu einer echten Tiptoi-Datei
 
