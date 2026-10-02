@@ -19,8 +19,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 TTTOOL = Path(__file__).resolve().parent.parent / "demo" / "tttool-1.11" / "tttool"
-PRINT_DPI = 300
 MM_PER_INCH = 25.4
+MIN_DPI = 210  # gemessen: tttool verweigert Codes unterhalb von ~201dpi ("Dots too large"), mit Marge
 
 
 def build_yaml(data: dict) -> str:
@@ -75,6 +75,19 @@ def main():
 
     code_size_mm = data.get("codeSizeMm", 25)
     shape = data.get("markerShape", "circle")
+    target_width_mm = data.get("targetWidthMm", 200)
+    # dpi des gesamten Projekts: wie viele Pixel im Designer-Bild einem Zoll beim Druck
+    # entsprechen. Daraus leiten sich sowohl die Code-Erzeugung als auch die PDF-Seitengrösse
+    # konsistent ab -- unabhängig von der tatsächlichen Pixelzahl des Originalbilds.
+    dpi = round(data["imageWidth"] / target_width_mm * MM_PER_INCH)
+    if dpi < MIN_DPI:
+        max_width_mm = data["imageWidth"] / MIN_DPI * MM_PER_INCH
+        sys.exit(
+            f"Zielbreite {target_width_mm}mm ergibt nur {dpi}dpi — zu wenig, tttool braucht mindestens "
+            f"{MIN_DPI}dpi für saubere Codes.\n"
+            f"Entweder im Designer die Zielbreite auf höchstens {max_width_mm:.0f}mm verkleinern "
+            f"(Bild wird dann kleiner gedruckt), oder ein höher aufgelöstes Originalbild verwenden."
+        )
 
     yaml_text = build_yaml(data)
     yaml_path = out_dir / "projekt.yaml"
@@ -85,8 +98,9 @@ def main():
     subprocess.run([str(TTTOOL), "assemble", str(yaml_path), str(gme_path)], check=True, cwd=out_dir)
     print(f"geschrieben: {gme_path}")
 
+    print(f"Projekt-DPI: {dpi} (aus Zielbreite {target_width_mm}mm für {data['imageWidth']}px)")
     subprocess.run(
-        [str(TTTOOL), "--code-dim", str(code_size_mm), "--dpi", str(PRINT_DPI), "--pixel-size", "1",
+        [str(TTTOOL), "--code-dim", str(code_size_mm), "--dpi", str(dpi), "--pixel-size", "1",
          "-f", "PNG", "oid-codes", str(yaml_path)],
         check=True, cwd=out_dir,
     )
@@ -111,15 +125,14 @@ def main():
     paste_code(base, draw, start_file, sx0, sy0, shape, "START")
 
     out_png = out_dir / "druckvorlage.png"
-    base.save(out_png, dpi=(PRINT_DPI, PRINT_DPI))
-    print(f"geschrieben: {out_png} ({base.width}x{base.height}px @ {PRINT_DPI} dpi"
-          f" = {base.width / PRINT_DPI * MM_PER_INCH:.0f}x{base.height / PRINT_DPI * MM_PER_INCH:.0f}mm)")
+    base.save(out_png, dpi=(dpi, dpi))
+    print(f"geschrieben: {out_png} ({base.width}x{base.height}px @ {dpi} dpi"
+          f" = {base.width / dpi * MM_PER_INCH:.0f}x{base.height / dpi * MM_PER_INCH:.0f}mm)")
 
     out_pdf = out_dir / "druckvorlage.pdf"
-    page_mm = (base.width / PRINT_DPI * MM_PER_INCH, base.height / PRINT_DPI * MM_PER_INCH)
     # resolution in DPI an save() ergibt bei PDF die physische Seitengrösse direkt aus den Pixeln,
     # keine nachträgliche Skalierung noetig.
-    base.save(out_pdf, resolution=PRINT_DPI)
+    base.save(out_pdf, resolution=dpi)
     print(f"geschrieben: {out_pdf}")
 
     print("\nFertig. GME auf den Stift kopieren.")
