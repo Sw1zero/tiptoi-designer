@@ -173,7 +173,9 @@ dropzone.addEventListener('drop', e => {
 });
 
 function drawBadge(cx, cy, w, label, enabled, highlight) {
-  const pad = Math.max(4, w * 0.1);
+  // Kein Rand hier -- die Vorschau soll exakt der Rasterzelle entsprechen.
+  // Der zusaetzliche Kontrastrand fuer den Druck wird nur in build_project.py angewendet.
+  const pad = 0;
   const box = [cx - w / 2 - pad, cy - w / 2 - pad, w + pad * 2, w + pad * 2];
   ctx.strokeStyle = enabled ? (highlight ? '#2277cc' : '#555') : '#999';
   ctx.lineWidth = highlight ? 4 : 2;
