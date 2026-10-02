@@ -19,7 +19,8 @@
   .zone-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
   .zone-head input[type=text] { font-weight: 600; }
   button { cursor: pointer; }
-  .del { background: none; border: none; color: #c33; font-size: 1.1rem; line-height: 1; }
+  .del { background: none; border: none; color: #c33; font-size: 1.3rem; line-height: 1; flex-shrink: 0; width: 32px; height: 32px; border-radius: 6px; }
+  .del:hover { background: #c332; }
   #dropzone { border: 2px dashed #8886; border-radius: 10px; padding: 24px; text-align: center; font-size: 0.85rem; }
   #dropzone.over { border-color: #39c; background: #39c2; }
   #canvasWrap { position: relative; max-width: 100%; }
@@ -303,8 +304,10 @@ canvas.addEventListener('mousedown', e => {
   if (document.getElementById('snapGrid').checked) {
     const step = codeSizePx();
     if (step > 3) {
-      zx = Math.round(x / step) * step;
-      zy = Math.round(y / step) * step;
+      // Raster beginnt an der Bildkante (imgRect), nicht am Seitenursprung --
+      // sonst klafft das Raster bei Bildern, die nicht exakt zu A4 passen (Letterboxing).
+      zx = imgRect.x + Math.round((x - imgRect.x) / step) * step;
+      zy = imgRect.y + Math.round((y - imgRect.y) / step) * step;
     }
   }
   const z = { id: `zone${zoneSeq++}`, label: '', text: '', x: zx, y: zy };
@@ -324,8 +327,8 @@ window.addEventListener('mouseup', () => {
   if (dragging && document.getElementById('snapGrid').checked) {
     const step = codeSizePx();
     if (step > 3) {
-      dragging.x = Math.round(dragging.x / step) * step;
-      dragging.y = Math.round(dragging.y / step) * step;
+      dragging.x = imgRect.x + Math.round((dragging.x - imgRect.x) / step) * step;
+      dragging.y = imgRect.y + Math.round((dragging.y - imgRect.y) / step) * step;
       render();
     }
   }
@@ -344,7 +347,7 @@ function renderList() {
       <div class="zone-head">
         <span>#${i + 1}</span>
         <input type="text" data-f="id" value="${escapeAttr(z.id)}" style="flex:1">
-        <button class="del" title="löschen">&times;</button>
+        <button type="button" class="del" title="Zone löschen">&times;</button>
       </div>
       <label>Label (kurz, auf dem Marker)
         <input type="text" data-f="label" value="${escapeAttr(z.label)}">
