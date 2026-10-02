@@ -8,27 +8,25 @@ Tiptoi-Lernspiele. Läuft komplett lokal im Browser, kein Server nötig.
 1. `index.html` öffnen (lokal per Doppelklick, oder gehostet z.B. über GitHub Pages)
 2. Bild laden (Drag & Drop oder Dateiauswahl) — wird automatisch in die A4-Seite
    eingepasst (contain-fit, Seitenverhältnis bleibt erhalten, kein Verzerren)
-3. Auf das Bild klicken, um eine Zone zu setzen (rastet standardmässig auf die
-   Mitte der angeklickten Rasterzelle ein). Marker lassen sich per Drag
-   verschieben. Ein reiner Klick (ohne Ziehen) auf eine bestehende Zone fragt
-   nach, ob sie gelöscht werden soll — es wird nie stillschweigend eine zweite
-   Zone darüber gelegt.
-4. Pro Zone: Label (kurz, sichtbar) und Erklärtext (wird später gesprochen) eintragen
-5. "Layout als JSON herunterladen"
+3. **"+ Feld hinzufügen"** klicken — legt ein neues Feld an und aktiviert es
+   automatisch zum Platzieren
+4. Erklärtext fürs Feld eintragen (wird später per Sprachausgabe abgespielt)
+5. Auf dem Raster die Stellen anklicken, die zu diesem Feld gehören sollen —
+   beliebig viele, alle bekommen denselben Code und lösen denselben Text aus
+   (z.B. mehrere gleichwertige Teile eines Diagramms). Nochmal auf eine
+   bereits gesetzte Stelle klicken entfernt sie wieder. Eine Stelle, die
+   schon zu einem anderen Feld gehört, lässt sich nicht überschreiben
+6. "Fertig" klicken, nächstes Feld hinzufügen, wiederholen
+7. "Layout als JSON herunterladen"
 
-**Mehrere Zonen mit demselben Code:** Im Feld "Teilt Code & Erklärung mit"
-kann eine Zone eine andere, bereits bestehende Zone auswählen — beide
-bekommen dann denselben gedruckten Code und lösen dieselbe Erklärung aus,
-nur an verschiedenen Stellen im Bild platziert (z.B. mehrere gleichwertige
-Teile eines Diagramms). Die verlinkte Zone bekommt dafür kein
-eigenes Erklärtext-Feld mehr (ausgegraut) — der Text kommt immer von der
-Zone, die ausgewählt wurde. Löscht man diese Zone, werden alle, die auf sie
-verweisen, automatisch wieder zu eigenständigen Zonen.
+Jedes Feld bekommt automatisch eine Nummer (Feld 1, Feld 2, …) basierend auf
+seiner Position in der Liste — kein manuelles Benennen nötig, und nach dem
+Löschen eines Felds rücken die folgenden Nummern einfach nach.
 
 Die Seite ist immer A4 bei 300dpi, unten fest eine Fussleiste mit
 **Start / Wiederholen / Stopp** (plus ein reservierter, noch ungenutzter
 vierter Platz für einen künftigen Modus-Button, siehe unten). Die JSON-Datei
-enthält die exakten Pixelkoordinaten jeder Zone auf dieser Seite — kein
+enthält die exakten Pixelkoordinaten jeder Position auf dieser Seite — kein
 Schätzen, keine manuelle Koordinatensuche, unabhängig von der Pixelgrösse
 des hochgeladenen Fotos.
 
@@ -36,7 +34,7 @@ des hochgeladenen Fotos.
 
 Ein vierter Button in der Fussleiste ist im Layout reserviert (sichtbar als
 gestrichelter Platzhalter "MODUS (folgt)"), aber ohne Funktion. Die Idee:
-pro Zone mehrere Inhalte (z.B. Erklärung / Wissens-Fakt / Spiel) hinterlegen
+pro Feld mehrere Inhalte (z.B. Erklärung / Wissens-Fakt / Spiel) hinterlegen
 und per Tipp auf diesen Button umschalten — wie bei den originalen
 Ravensburger-Büchern. Braucht einen grösseren Umbau des Datenmodells, kommt
 als eigener Schritt, sobald klar ist, welche Modi tatsächlich gebraucht werden.

@@ -69,26 +69,8 @@ def control_button_centers() -> list[dict]:
     ]
 
 
-def dedupe_zones_by_id(zones: list[dict]) -> dict[str, dict]:
-    """Mehrere Zonen (verschiedene Positionen) koennen dieselbe id teilen -- dann
-    sollen sie denselben Code/Text bekommen (z.B. vier Ecken, die alle dieselbe
-    Erklaerung ausloesen). YAML erlaubt aber keine doppelten Schluessel, darum hier
-    auf den ersten (nicht-leeren) Text pro id reduzieren, mit Warnung bei Konflikt."""
-    by_id: dict[str, dict] = {}
-    for z in zones:
-        if z["id"] not in by_id:
-            by_id[z["id"]] = z
-        else:
-            prev_text = by_id[z["id"]]["text"].strip()
-            new_text = z["text"].strip()
-            if new_text and prev_text and new_text != prev_text:
-                print(f"Warnung: Zone-ID '{z['id']}' kommt mehrfach mit unterschiedlichem "
-                      f"Text vor -- verwende den ersten ('{prev_text[:40]}...').")
-    return by_id
-
-
 def build_yaml(data: dict) -> str:
-    unique = dedupe_zones_by_id(data["zones"])
+    fields = [f for f in data["fields"] if f["positions"]]  # Felder ohne Position ergeben keinen Sinn
     lines = [
         f"product-id: {data['productId']}",
         f"comment: {json.dumps(data.get('title', 'Tiptoi-Projekt'))}",
@@ -96,29 +78,23 @@ def build_yaml(data: dict) -> str:
         "",
         "speak:",
     ]
-    for z in unique.values():
-        text = z["text"].strip() or z["label"] or z["id"]
-        lines.append(f"  {z['id']}: {json.dumps(text)}")
+    for f in fields:
+        text = f["text"].strip() or f["id"]
+        lines.append(f"  {f['id']}: {json.dumps(text)}")
     lines.append("")
     lines.append("scripts:")
-    for z in unique.values():
-        lines.append(f"  {z['id']}: P({z['id']})")
+    for f in fields:
+        lines.append(f"  {f['id']}: P({f['id']})")
     return "\n".join(lines) + "\n"
 
 
 def paste_code(base: Image.Image, draw: ImageDraw.ImageDraw, code_path: Path,
-                cx: int, cy: int, shape: str, label: str | None = None):
+                cx: int, cy: int, label: str | None = None):
     code_img = Image.open(code_path).convert("RGBA")  # native Grösse, kein resize()
     w, h = code_img.size
     pad = max(4, w // 10)
-    if shape == "square":
-        box = [cx - w // 2 - pad, cy - h // 2 - pad, cx + w // 2 + pad, cy + h // 2 + pad]
-        draw.rectangle(box, fill="white", outline="black", width=2)
-    else:
-        # Kreis muss die Diagonale des quadratischen Codes abdecken, sonst ragen die Ecken heraus.
-        r = (w / 2) * 1.414 + pad
-        box = [cx - r, cy - r, cx + r, cy + r]
-        draw.ellipse(box, fill="white", outline="black", width=2)
+    box = [cx - w // 2 - pad, cy - h // 2 - pad, cx + w // 2 + pad, cy + h // 2 + pad]
+    draw.rectangle(box, fill="white", outline="black", width=2)
     base.paste(code_img, (cx - w // 2, cy - h // 2), code_img)
     if label:
         draw.text((cx, box[3] + 4), label, fill="black", anchor="ma")
@@ -135,11 +111,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     data = json.loads(layout_path.read_text())
 
-    if not data["zones"]:
-        sys.exit("Keine Zonen im Layout — zuerst im Designer Zonen setzen.")
+    data["fields"] = [f for f in data["fields"] if f["positions"]]
+    if not data["fields"]:
+        sys.exit("Keine Felder mit Positionen im Layout — zuerst im Designer Felder anlegen und platzieren.")
 
     code_size_mm = data.get("codeSizeMm", 25)
-    shape = data.get("markerShape", "circle")
 
     if PAGE_DPI < MIN_DPI:
         sys.exit(f"PAGE_DPI ({PAGE_DPI}) liegt unter dem von tttool verlangten Minimum ({MIN_DPI}).")
@@ -167,16 +143,17 @@ def main():
     page.paste(resized, (round(rect["x"]), round(rect["y"])))
 
     draw = ImageDraw.Draw(page)
-    img_x0, img_y0 = round(rect["x"]), round(rect["y"])
-    for z in data["zones"]:
-        code_file = out_dir / f"oid-{data['productId']}-{z['id']}.png"
-        # Zonen-Koordinaten kommen bereits in Seiten-Pixeln aus dem Designer (gleiches Layout).
-        paste_code(page, draw, code_file, int(z["x"]), int(z["y"]), shape, z.get("label"))
+    for i, f in enumerate(data["fields"]):
+        code_file = out_dir / f"oid-{data['productId']}-{f['id']}.png"
+        label = f"Feld {i + 1}"
+        # Positionen kommen bereits in Seiten-Pixeln aus dem Designer (gleiches Layout).
+        for pos in f["positions"]:
+            paste_code(page, draw, code_file, int(pos["x"]), int(pos["y"]), label)
 
     for btn in control_button_centers():
         # tttool benennt die Sonder-Codes START/REPLAY/STOP
         code_file = out_dir / f"oid-{data['productId']}-{btn['label']}.png"
-        paste_code(page, draw, code_file, round(btn["x"]), round(btn["y"]), shape, btn["label"])
+        paste_code(page, draw, code_file, round(btn["x"]), round(btn["y"]), btn["label"])
 
     draw.rectangle([CONTENT["x"], CONTENT["y"], CONTENT["x"] + CONTENT["w"], CONTENT["y"] + CONTENT["h"]],
                     outline="#ccc", width=1)

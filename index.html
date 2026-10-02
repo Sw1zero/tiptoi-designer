@@ -15,12 +15,16 @@
   label { display: block; font-size: 0.8rem; margin-top: 6px; }
   input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 4px; margin-top: 2px; }
   textarea { resize: vertical; min-height: 3.5em; }
-  .zone { border: 1px solid #8884; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
-  .zone-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-  .zone-head input[type=text] { font-weight: 600; }
+  .field { border: 1px solid #8884; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+  .field.active { border-color: #2277cc; border-width: 2px; background: #2277cc11; }
+  .field-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .field-head strong { flex: 1; }
   button { cursor: pointer; }
   .del { background: none; border: none; color: #c33; font-size: 1.3rem; line-height: 1; flex-shrink: 0; width: 32px; height: 32px; border-radius: 6px; }
   .del:hover { background: #c332; }
+  .place-btn { font-size: 0.8rem; padding: 6px; margin-top: 6px; width: 100%; border: 1px solid #2277cc; background: white; color: #2277cc; border-radius: 6px; }
+  .place-btn.active { background: #2277cc; color: white; }
+  #addField { width: 100%; padding: 10px; font-size: 0.9rem; font-weight: 600; background: #2277cc; color: white; border: none; border-radius: 8px; margin-bottom: 12px; }
   #dropzone { border: 2px dashed #8886; border-radius: 10px; padding: 24px; text-align: center; font-size: 0.85rem; }
   #dropzone.over { border-color: #39c; background: #39c2; }
   #canvasWrap { position: relative; max-width: 100%; }
@@ -33,7 +37,7 @@
 <body>
 <div id="sidebar">
   <h1>Tiptoi Zonen-Designer</h1>
-  <p class="hint">Seite ist fest A4. Bild laden (wird automatisch eingepasst), auf das Bild klicken um eine Zone zu setzen, Marker zum Verschieben ziehen. Start/Wiederholen/Stopp stehen immer unten auf der Seite.</p>
+  <p class="hint">Seite ist fest A4. Bild laden (wird automatisch eingepasst). Workflow: Feld hinzufügen → Erklärtext schreiben → auf dem Raster die zugehörigen Stellen anklicken. Dann das nächste Feld.</p>
 
   <fieldset>
     <legend>Projekt</legend>
@@ -47,23 +51,17 @@
     <label>Code-Grösse (mm)
       <input type="number" id="codeSizeMm" value="25" min="5" max="100">
     </label>
-    <p class="hint">Echte physische Grösse des gedruckten Punktmusters (das Muster wiederholt sich fein innerhalb dieser Fläche, darum funktionieren auch kleine wie grosse Werte). Gilt für alle Inhalts-Zonen gleich. Nicht nachträglich im Bild verzerren/skalieren, sonst liest der Stift den Code nicht mehr.</p>
-    <label>Marker-Form (nur optisch, ändert den Code selbst nicht)
-      <select id="markerShape">
-        <option value="circle">Kreis</option>
-        <option value="square">Quadrat</option>
-      </select>
-    </label>
+    <p class="hint">Echte physische Grösse des gedruckten Punktmusters (das Muster wiederholt sich fein innerhalb dieser Fläche, darum funktionieren auch kleine wie grosse Werte). Gilt für alle Felder gleich. Nicht nachträglich im Bild verzerren/skalieren, sonst liest der Stift den Code nicht mehr.</p>
     <label><input type="checkbox" id="showGrid" checked style="width:auto;display:inline;margin-right:6px;">Raster anzeigen</label>
-    <label><input type="checkbox" id="snapGrid" checked style="width:auto;display:inline;margin-right:6px;">Neue Zonen am Raster einrasten</label>
   </fieldset>
 
   <div id="dropzone">Bild hierher ziehen oder <label style="display:inline;text-decoration:underline;cursor:pointer;">auswählen<input type="file" id="fileInput" accept="image/*" style="display:none"></label></div>
 
   <fieldset>
-    <legend>Zonen (<span id="zoneCount">0</span>)</legend>
-    <div id="zoneList"></div>
-    <p class="hint" id="noZoneHint">Noch keine Zonen. Klicke auf das Bild.</p>
+    <legend>Felder (<span id="fieldCount">0</span>)</legend>
+    <button type="button" id="addField">+ Feld hinzufügen</button>
+    <div id="fieldList"></div>
+    <p class="hint" id="noFieldHint">Noch keine Felder. Zuerst "Feld hinzufügen" klicken.</p>
   </fieldset>
 
   <div class="actions">
@@ -125,25 +123,20 @@ const canvas = document.getElementById('canvas');
 canvas.width = PAGE_W;
 canvas.height = PAGE_H;
 const ctx = canvas.getContext('2d');
-const zoneList = document.getElementById('zoneList');
-const zoneCount = document.getElementById('zoneCount');
-const noZoneHint = document.getElementById('noZoneHint');
+const fieldList = document.getElementById('fieldList');
+const fieldCount = document.getElementById('fieldCount');
+const noFieldHint = document.getElementById('noFieldHint');
 const dropzone = document.getElementById('dropzone');
 
 let image = null;
 let imageName = '';
 let imgRect = null; // {x,y,w,h} des eingepassten Bilds auf der Seite
-let zones = []; // {id, label, text, x, y} -- x/y in Seiten-Pixeln (px bei 300dpi)
-let dragging = null;
-let zoneSeq = 1;
+let fields = []; // [{ text: '', positions: [{x,y}, ...] }, ...] -- x/y in Seiten-Pixeln
+let activeField = -1; // Index des Feldes, das gerade per Klick platziert wird
 
 function codeSizePx() {
   const codeSizeMm = parseFloat(document.getElementById('codeSizeMm').value) || 25;
   return codeSizeMm * MM;
-}
-
-function markerRadius() {
-  return Math.max(6, codeSizePx() / 2);
 }
 
 function loadImageFile(file) {
@@ -154,9 +147,10 @@ function loadImageFile(file) {
       image = img;
       imageName = file.name;
       imgRect = fitRect(img.naturalWidth, img.naturalHeight);
-      zones = [];
+      fields = [];
+      activeField = -1;
       render();
-      renderList();
+      renderFieldList();
     };
     img.src = e.target.result;
   };
@@ -178,25 +172,15 @@ dropzone.addEventListener('drop', e => {
   if (f) loadImageFile(f);
 });
 
-function drawBadge(cx, cy, w, shape, label, enabled) {
+function drawBadge(cx, cy, w, label, enabled, highlight) {
   const pad = Math.max(4, w * 0.1);
-  ctx.strokeStyle = enabled ? '#2277cc' : '#999';
+  const box = [cx - w / 2 - pad, cy - w / 2 - pad, w + pad * 2, w + pad * 2];
+  ctx.strokeStyle = enabled ? (highlight ? '#2277cc' : '#555') : '#999';
+  ctx.lineWidth = highlight ? 4 : 2;
   ctx.setLineDash(enabled ? [] : [6, 4]);
-  if (shape === 'square') {
-    const box = [cx - w / 2 - pad, cy - w / 2 - pad, w + pad * 2, w + pad * 2];
-    ctx.fillStyle = enabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.03)';
-    ctx.fillRect(box[0], box[1], box[2], box[3]);
-    ctx.lineWidth = 2;
-    ctx.strokeRect(box[0], box[1], box[2], box[3]);
-  } else {
-    const r = (w / 2) * 1.414 + pad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = enabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.03)';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
+  ctx.fillStyle = enabled ? (highlight ? 'rgba(34,119,204,0.15)' : 'rgba(255,255,255,0.9)') : 'rgba(0,0,0,0.03)';
+  ctx.fillRect(box[0], box[1], box[2], box[3]);
+  ctx.strokeRect(box[0], box[1], box[2], box[3]);
   ctx.setLineDash([]);
   if (label) {
     ctx.fillStyle = enabled ? '#222' : '#999';
@@ -245,29 +229,15 @@ function render() {
     }
   }
 
-  const r = markerRadius();
-  const shape = document.getElementById('markerShape').value;
-  zones.forEach((z, i) => {
-    ctx.beginPath();
-    if (shape === 'square') {
-      ctx.rect(z.x - r, z.y - r, r * 2, r * 2);
-    } else {
-      ctx.arc(z.x, z.y, r, 0, Math.PI * 2);
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#2277cc';
-    ctx.stroke();
-    ctx.fillStyle = '#2277cc';
-    ctx.font = `bold ${Math.max(14, r * 0.6)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(i + 1, z.x, z.y);
+  const r = codeSizePx();
+  fields.forEach((field, fi) => {
+    field.positions.forEach(p => {
+      drawBadge(p.x, p.y, r, String(fi + 1), true, fi === activeField);
+    });
   });
 
   controlButtonCenters().forEach(b => {
-    drawBadge(b.x, b.y, codeSizePx(), shape, b.label, b.enabled);
+    drawBadge(b.x, b.y, codeSizePx(), b.label, b.enabled, false);
   });
 }
 
@@ -282,174 +252,102 @@ function cellIndex(x, y, step) {
   return { cx: Math.floor((x - imgRect.x) / step), cy: Math.floor((y - imgRect.y) / step) };
 }
 
-// Trifft, wenn Klick in derselben Rasterzelle liegt wie eine bestehende Zone --
-// nicht nur im kleinen Kreis um ihre Mitte. Sonst erkennt ein Klick in die Ecke
-// einer belegten Zelle den Treffer nicht und legt eine zweite, exakt überlappende
-// Zone darüber an.
-function zoneAt(x, y) {
-  const step = codeSizePx();
-  if (!imgRect || step <= 3) {
-    const r = markerRadius();
-    for (let i = zones.length - 1; i >= 0; i--) {
-      const z = zones[i];
-      if (Math.hypot(z.x - x, z.y - y) <= r) return z;
-    }
-    return null;
-  }
-  const c = cellIndex(x, y, step);
-  for (let i = zones.length - 1; i >= 0; i--) {
-    const z = zones[i];
-    const zc = cellIndex(z.x, z.y, step);
-    if (zc.cx === c.cx && zc.cy === c.cy) return z;
-  }
-  return null;
+function snapToCellCenter(v, origin, step) {
+  return origin + (Math.floor((v - origin) / step) + 0.5) * step;
 }
 
 function insideImage(x, y) {
   return imgRect && x >= imgRect.x && x <= imgRect.x + imgRect.w && y >= imgRect.y && y <= imgRect.y + imgRect.h;
 }
 
-// Snapt auf die Mitte der Rasterzelle (nicht auf die Gitterlinien-Kreuzung), damit der
-// Marker sauber innerhalb einer Zelle sitzt statt über vier Zellen hinweg zentriert zu sein.
-function snapToCellCenter(v, origin, step) {
-  return origin + (Math.floor((v - origin) / step) + 0.5) * step;
+// Findet, ob (und in welchem Feld) an dieser Zelle schon eine Position existiert.
+function fieldAtCell(cx, cy, step) {
+  for (let fi = 0; fi < fields.length; fi++) {
+    const positions = fields[fi].positions;
+    for (let pi = 0; pi < positions.length; pi++) {
+      const c = cellIndex(positions[pi].x, positions[pi].y, step);
+      if (c.cx === cx && c.cy === cy) return { fieldIndex: fi, posIndex: pi };
+    }
+  }
+  return null;
 }
 
-let mouseDownAt = null; // {x,y} -- um Klick (ohne Bewegung) von echtem Ziehen zu unterscheiden
-let dragWasExisting = false; // true nur, wenn mousedown auf eine BEREITS vorhandene Zone traf
-const DRAG_THRESHOLD = 4; // px in Seiten-Koordinaten
-
-canvas.addEventListener('mousedown', e => {
+canvas.addEventListener('click', e => {
   if (!image) return;
   const { x, y } = pointerToPageCoords(e);
-  mouseDownAt = { x, y };
-  const hit = zoneAt(x, y);
-  if (hit) {
-    dragging = hit;
-    dragWasExisting = true;
+  if (!insideImage(x, y)) return;
+  if (activeField < 0 || activeField >= fields.length) {
+    alert('Zuerst ein Feld anlegen oder in der Liste "Positionen setzen" aktivieren.');
     return;
   }
-  dragWasExisting = false;
-  if (!insideImage(x, y)) return; // nur auf dem Bild neue Zonen setzen
-  let zx = x, zy = y;
-  if (document.getElementById('snapGrid').checked) {
-    const step = codeSizePx();
-    if (step > 3) {
-      // Raster beginnt an der Bildkante (imgRect), nicht am Seitenursprung --
-      // sonst klafft das Raster bei Bildern, die nicht exakt zu A4 passen (Letterboxing).
-      zx = snapToCellCenter(x, imgRect.x, step);
-      zy = snapToCellCenter(y, imgRect.y, step);
-    }
+  const step = codeSizePx();
+  if (step <= 3) return;
+  const c = cellIndex(x, y, step);
+  const hit = fieldAtCell(c.cx, c.cy, step);
+  if (hit && hit.fieldIndex === activeField) {
+    // Nochmal angeklickt -- diese Position wieder entfernen.
+    fields[activeField].positions.splice(hit.posIndex, 1);
+  } else if (hit) {
+    alert(`Diese Stelle gehört bereits zu Feld ${hit.fieldIndex + 1}.`);
+    return;
+  } else {
+    const cx = snapToCellCenter(x, imgRect.x, step);
+    const cy = snapToCellCenter(y, imgRect.y, step);
+    fields[activeField].positions.push({ x: cx, y: cy });
   }
-  const z = { id: `zone${zoneSeq++}`, label: '', text: '', linkTo: null, x: zx, y: zy };
-  zones.push(z);
   render();
-  renderList();
-  dragging = z;
-});
-window.addEventListener('mousemove', e => {
-  if (!dragging) return;
-  const { x, y } = pointerToPageCoords(e);
-  dragging.x = Math.round(x);
-  dragging.y = Math.round(y);
-  render();
-});
-window.addEventListener('mouseup', e => {
-  if (!dragging) { mouseDownAt = null; return; }
-  const { x, y } = pointerToPageCoords(e);
-  const moved = mouseDownAt ? Math.hypot(x - mouseDownAt.x, y - mouseDownAt.y) : 999;
-
-  if (moved < DRAG_THRESHOLD && dragWasExisting) {
-    // Reiner Klick auf eine bestehende Zone (kein Ziehen) -- fragen statt stillschweigend
-    // etwas zu überlagern oder zu verschieben.
-    const name = dragging.label || dragging.id;
-    if (confirm(`Zone "${name}" löschen?\n\nOK = löschen. Abbrechen = unverändert lassen (Text unten in der Liste bearbeiten).`)) {
-      unlinkZonesPointingTo(dragging.id);
-      zones = zones.filter(z => z !== dragging);
-      render();
-    } else {
-      scrollZoneIntoView(dragging);
-    }
-  } else if (document.getElementById('snapGrid').checked) {
-    const step = codeSizePx();
-    if (step > 3) {
-      dragging.x = snapToCellCenter(dragging.x, imgRect.x, step);
-      dragging.y = snapToCellCenter(dragging.y, imgRect.y, step);
-      render();
-    }
-  }
-  dragging = null;
-  mouseDownAt = null;
-  renderList();
+  renderFieldList();
 });
 
-function unlinkZonesPointingTo(id) {
-  zones.forEach(z => { if (z.linkTo === id) z.linkTo = null; });
-}
-
-function scrollZoneIntoView(z) {
-  const idx = zones.indexOf(z);
-  const el = zoneList.children[idx];
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const ta = el.querySelector('[data-f=text]');
-    if (ta) ta.focus();
-  }
-}
-
-function renderList() {
-  zoneList.innerHTML = '';
-  zoneCount.textContent = zones.length;
-  noZoneHint.style.display = zones.length ? 'none' : 'block';
-  zones.forEach((z, i) => {
+function renderFieldList() {
+  fieldList.innerHTML = '';
+  fieldCount.textContent = fields.length;
+  noFieldHint.style.display = fields.length ? 'none' : 'block';
+  fields.forEach((field, i) => {
     const div = document.createElement('div');
-    div.className = 'zone';
-    // Nur Zonen, die selbst nicht schon verlinkt sind, duerfen als Ziel gewaehlt werden --
-    // verhindert Verlink-Ketten (A->B->C), die beim Export unnoetig verwirrend waeren.
-    const linkOptions = zones
-      .filter(zz => zz !== z && !zz.linkTo)
-      .map(zz => `<option value="${escapeAttr(zz.id)}" ${z.linkTo === zz.id ? 'selected' : ''}>#${zones.indexOf(zz) + 1} ${escapeHtml(zz.label || zz.id)}</option>`)
-      .join('');
+    div.className = 'field' + (i === activeField ? ' active' : '');
     div.innerHTML = `
-      <div class="zone-head">
-        <span>#${i + 1}</span>
-        <span class="hint" style="flex:1;margin:0;">${escapeHtml(z.id)}</span>
-        <button type="button" class="del" title="Zone löschen">&times;</button>
+      <div class="field-head">
+        <strong>Feld ${i + 1}</strong>
+        <span class="hint" style="margin:0;">${field.positions.length} Position${field.positions.length === 1 ? '' : 'en'}</span>
+        <button type="button" class="del" title="Feld löschen">&times;</button>
       </div>
-      <label>Label (kurz, auf dem Marker)
-        <input type="text" data-f="label" value="${escapeAttr(z.label)}">
+      <label>Erklärtext (wird gesprochen)
+        <textarea data-f="text">${escapeHtml(field.text)}</textarea>
       </label>
-      <label>Teilt Code &amp; Erklärung mit
-        <select data-f="linkTo">
-          <option value="">— eigene Zone —</option>
-          ${linkOptions}
-        </select>
-      </label>
-      <label data-f="textWrap" style="${z.linkTo ? 'display:none' : ''}">Erklärtext (wird gesprochen)
-        <textarea data-f="text">${escapeHtml(z.text)}</textarea>
-      </label>
+      <button type="button" class="place-btn${i === activeField ? ' active' : ''}">
+        ${i === activeField ? 'Fertig (Positionen setzen beenden)' : 'Positionen setzen'}
+      </button>
     `;
-    div.querySelector('[data-f=label]').addEventListener('input', e => { z.label = e.target.value; render(); });
-    div.querySelector('[data-f=text]').addEventListener('input', e => { z.text = e.target.value; });
-    div.querySelector('[data-f=linkTo]').addEventListener('change', e => {
-      z.linkTo = e.target.value || null;
-      renderList();
-    });
+    div.querySelector('[data-f=text]').addEventListener('input', e => { field.text = e.target.value; });
     div.querySelector('.del').addEventListener('click', () => {
-      unlinkZonesPointingTo(z.id);
-      zones = zones.filter(zz => zz !== z);
-      render(); renderList();
+      fields.splice(i, 1);
+      if (activeField === i) activeField = -1;
+      else if (activeField > i) activeField--;
+      render(); renderFieldList();
     });
-    zoneList.appendChild(div);
+    div.querySelector('.place-btn').addEventListener('click', () => {
+      activeField = (activeField === i) ? -1 : i;
+      render(); renderFieldList();
+    });
+    fieldList.appendChild(div);
   });
 }
 
-['codeSizeMm', 'markerShape', 'showGrid', 'snapGrid'].forEach(id => {
-  document.getElementById(id).addEventListener('input', render);
+document.getElementById('addField').addEventListener('click', () => {
+  fields.push({ text: '', positions: [] });
+  activeField = fields.length - 1;
+  render();
+  renderFieldList();
+  const textarea = fieldList.lastElementChild?.querySelector('[data-f=text]');
+  if (textarea) textarea.focus();
 });
 
 function escapeHtml(s) { return (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+['codeSizeMm', 'showGrid'].forEach(id => {
+  document.getElementById(id).addEventListener('input', render);
+});
 
 document.getElementById('exportJson').addEventListener('click', () => {
   if (!image) { alert('Zuerst ein Bild laden.'); return; }
@@ -457,10 +355,9 @@ document.getElementById('exportJson').addEventListener('click', () => {
     productId: parseInt(document.getElementById('productId').value) || 9001,
     title: document.getElementById('title').value,
     codeSizeMm: parseFloat(document.getElementById('codeSizeMm').value) || 25,
-    markerShape: document.getElementById('markerShape').value,
     imageFile: imageName,
     pageDpi: PAGE_DPI,
-    zones: zones.map(z => ({ id: z.linkTo || z.id, label: z.label, text: z.text, x: z.x, y: z.y }))
+    fields: fields.map((f, i) => ({ id: `feld${i + 1}`, text: f.text, positions: f.positions }))
   };
   downloadBlob(JSON.stringify(data, null, 2), 'layout.json', 'application/json');
 });
