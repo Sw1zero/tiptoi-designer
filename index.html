@@ -43,6 +43,16 @@
     <label>Titel / Kommentar
       <input type="text" id="title" value="Mein Tiptoi-Spiel">
     </label>
+    <label>Code-Grösse (mm)
+      <input type="number" id="codeSizeMm" value="25" min="10" max="50">
+    </label>
+    <p class="hint">Echte physische Grösse des gedruckten Punktmusters. Gilt für alle Zonen gleich. Nicht nachträglich im Bild verzerren/skalieren, sonst liest der Stift den Code nicht mehr.</p>
+    <label>Marker-Form (nur optisch, ändert den Code selbst nicht)
+      <select id="markerShape">
+        <option value="circle">Kreis</option>
+        <option value="square">Quadrat</option>
+      </select>
+    </label>
   </fieldset>
 
   <div id="dropzone">Bild hierher ziehen oder <label style="display:inline;text-decoration:underline;cursor:pointer;">auswählen<input type="file" id="fileInput" accept="image/*" style="display:none"></label></div>
@@ -76,9 +86,14 @@ const dropzone = document.getElementById('dropzone');
 
 let image = null;
 let imageName = '';
-let zones = []; // {id, label, text, x, y, size}
+let zones = []; // {id, label, text, x, y} -- x/y in natural image pixels
 let dragging = null; // zone being dragged
 let zoneSeq = 1;
+
+function markerRadius() {
+  // reines UI-Klickziel zur Vorschau, keine Druckgrösse
+  return Math.max(20, canvas.width * 0.04);
+}
 
 function naturalToDisplayScale() {
   return canvas.getBoundingClientRect().width / canvas.width;
@@ -124,16 +139,22 @@ function render() {
     return;
   }
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const r = markerRadius();
+  const shape = document.getElementById('markerShape').value;
   zones.forEach((z, i) => {
     ctx.beginPath();
-    ctx.arc(z.x, z.y, z.size / 2, 0, Math.PI * 2);
+    if (shape === 'square') {
+      ctx.rect(z.x - r, z.y - r, r * 2, r * 2);
+    } else {
+      ctx.arc(z.x, z.y, r, 0, Math.PI * 2);
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#2277cc';
     ctx.stroke();
     ctx.fillStyle = '#2277cc';
-    ctx.font = `bold ${Math.max(14, z.size * 0.3)}px sans-serif`;
+    ctx.font = `bold ${Math.max(14, r * 0.6)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(i + 1, z.x, z.y);
@@ -150,9 +171,10 @@ function pointerToImageCoords(evt) {
 }
 
 function zoneAt(x, y) {
+  const r = markerRadius();
   for (let i = zones.length - 1; i >= 0; i--) {
     const z = zones[i];
-    if (Math.hypot(z.x - x, z.y - y) <= z.size / 2) return z;
+    if (Math.hypot(z.x - x, z.y - y) <= r) return z;
   }
   return null;
 }
@@ -164,8 +186,7 @@ canvas.addEventListener('mousedown', e => {
   if (hit) {
     dragging = hit;
   } else {
-    const defaultSize = Math.round(canvas.width * 0.08);
-    const z = { id: `zone${zoneSeq++}`, label: '', text: '', x, y, size: defaultSize };
+    const z = { id: `zone${zoneSeq++}`, label: '', text: '', x, y };
     zones.push(z);
     render();
     renderList();
@@ -200,18 +221,10 @@ function renderList() {
       <label>Erklärtext (wird gesprochen)
         <textarea data-f="text">${escapeHtml(z.text)}</textarea>
       </label>
-      <label>Grösse (px): <span data-f="sizeOut">${z.size}</span>
-        <input type="number" data-f="size" value="${z.size}" min="20" step="5">
-      </label>
     `;
     div.querySelector('[data-f=id]').addEventListener('input', e => { z.id = e.target.value; });
     div.querySelector('[data-f=label]').addEventListener('input', e => { z.label = e.target.value; render(); });
     div.querySelector('[data-f=text]').addEventListener('input', e => { z.text = e.target.value; });
-    div.querySelector('[data-f=size]').addEventListener('input', e => {
-      z.size = Math.max(10, parseInt(e.target.value) || z.size);
-      div.querySelector('[data-f=sizeOut]').textContent = z.size;
-      render();
-    });
     div.querySelector('.del').addEventListener('click', () => {
       zones = zones.filter(zz => zz !== z);
       render(); renderList();
@@ -228,10 +241,12 @@ document.getElementById('exportJson').addEventListener('click', () => {
   const data = {
     productId: parseInt(document.getElementById('productId').value) || 9001,
     title: document.getElementById('title').value,
+    codeSizeMm: parseFloat(document.getElementById('codeSizeMm').value) || 25,
+    markerShape: document.getElementById('markerShape').value,
     imageFile: imageName,
     imageWidth: canvas.width,
     imageHeight: canvas.height,
-    zones: zones.map(z => ({ id: z.id, label: z.label, text: z.text, x: z.x, y: z.y, size: z.size }))
+    zones: zones.map(z => ({ id: z.id, label: z.label, text: z.text, x: z.x, y: z.y }))
   };
   downloadBlob(JSON.stringify(data, null, 2), 'layout.json', 'application/json');
 });
