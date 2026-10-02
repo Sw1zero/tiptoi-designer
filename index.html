@@ -316,6 +316,7 @@ function snapToCellCenter(v, origin, step) {
 }
 
 let mouseDownAt = null; // {x,y} -- um Klick (ohne Bewegung) von echtem Ziehen zu unterscheiden
+let dragWasExisting = false; // true nur, wenn mousedown auf eine BEREITS vorhandene Zone traf
 const DRAG_THRESHOLD = 4; // px in Seiten-Koordinaten
 
 canvas.addEventListener('mousedown', e => {
@@ -325,8 +326,10 @@ canvas.addEventListener('mousedown', e => {
   const hit = zoneAt(x, y);
   if (hit) {
     dragging = hit;
+    dragWasExisting = true;
     return;
   }
+  dragWasExisting = false;
   if (!insideImage(x, y)) return; // nur auf dem Bild neue Zonen setzen
   let zx = x, zy = y;
   if (document.getElementById('snapGrid').checked) {
@@ -355,10 +358,8 @@ window.addEventListener('mouseup', e => {
   if (!dragging) { mouseDownAt = null; return; }
   const { x, y } = pointerToPageCoords(e);
   const moved = mouseDownAt ? Math.hypot(x - mouseDownAt.x, y - mouseDownAt.y) : 999;
-  const wasExistingZone = zones.includes(dragging) && dragging.id !== undefined && mouseDownAt &&
-    zoneAt(mouseDownAt.x, mouseDownAt.y) === dragging;
 
-  if (moved < DRAG_THRESHOLD && wasExistingZone) {
+  if (moved < DRAG_THRESHOLD && dragWasExisting) {
     // Reiner Klick auf eine bestehende Zone (kein Ziehen) -- fragen statt stillschweigend
     // etwas zu überlagern oder zu verschieben.
     const name = dragging.label || dragging.id;
