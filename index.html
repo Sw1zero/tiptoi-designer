@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiptoi Zonen-Designer</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+  #sidebar { width: 360px; flex-shrink: 0; padding: 16px; overflow-y: auto; border-right: 1px solid #8884; box-sizing: border-box; }
+  #main { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; background: #8881; }
+  h1 { font-size: 1.1rem; margin: 0 0 12px; }
+  fieldset { border: 1px solid #8884; border-radius: 8px; margin-bottom: 12px; }
+  legend { font-weight: 600; font-size: 0.85rem; }
+  label { display: block; font-size: 0.8rem; margin-top: 6px; }
+  input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 4px; margin-top: 2px; }
+  textarea { resize: vertical; min-height: 3.5em; }
+  .zone { border: 1px solid #8884; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+  .zone-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .zone-head input[type=text] { font-weight: 600; }
+  button { cursor: pointer; }
+  .del { background: none; border: none; color: #c33; font-size: 1.1rem; line-height: 1; }
+  #dropzone { border: 2px dashed #8886; border-radius: 10px; padding: 24px; text-align: center; font-size: 0.85rem; }
+  #dropzone.over { border-color: #39c; background: #39c2; }
+  #canvasWrap { position: relative; max-width: 100%; }
+  canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 1px 6px #0003; cursor: crosshair; }
+  .hint { font-size: 0.75rem; opacity: 0.7; margin-top: 2px; }
+  .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .actions button { padding: 8px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>Tiptoi Zonen-Designer</h1>
+  <p class="hint">Bild laden, auf das Bild klicken um eine Zone zu setzen, Marker zum Verschieben ziehen. Jede Zone bekommt einen Erklärtext, der später per Sprachausgabe abgespielt wird.</p>
+
+  <fieldset>
+    <legend>Projekt</legend>
+    <label>Produkt-ID
+      <input type="number" id="productId" value="9001">
+    </label>
+    <p class="hint">Eindeutige Nummer für dieses Projekt. Für Schule/privat: Bereich 9000–9999 verwenden, nicht mit einem echten Tiptoi-Produkt kollidieren.</p>
+    <label>Titel / Kommentar
+      <input type="text" id="title" value="Mein Tiptoi-Spiel">
+    </label>
+  </fieldset>
+
+  <div id="dropzone">Bild hierher ziehen oder <label style="display:inline;text-decoration:underline;cursor:pointer;">auswählen<input type="file" id="fileInput" accept="image/*" style="display:none"></label></div>
+
+  <fieldset>
+    <legend>Zonen (<span id="zoneCount">0</span>)</legend>
+    <div id="zoneList"></div>
+    <p class="hint" id="noZoneHint">Noch keine Zonen. Klicke auf das Bild.</p>
+  </fieldset>
+
+  <div class="actions">
+    <button id="exportJson">Layout als JSON herunterladen</button>
+    <button id="exportPreview">Bild mit Markierungen herunterladen</button>
+  </div>
+  <p class="hint">Die JSON-Datei wird lokal mit tttool zu einer fertigen Tiptoi-Datei (GME) und einer Druckvorlage mit den echten Punktcodes verarbeitet.</p>
+</div>
+
+<div id="main">
+  <div id="canvasWrap">
+    <canvas id="canvas" width="800" height="600"></canvas>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const zoneList = document.getElementById('zoneList');
+const zoneCount = document.getElementById('zoneCount');
+const noZoneHint = document.getElementById('noZoneHint');
+const dropzone = document.getElementById('dropzone');
+
+let image = null;
+let imageName = '';
+let zones = []; // {id, label, text, x, y, size}
+let dragging = null; // zone being dragged
+let zoneSeq = 1;
+
+function naturalToDisplayScale() {
+  return canvas.getBoundingClientRect().width / canvas.width;
+}
+
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      image = img;
+      imageName = file.name;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      zones = [];
+      render();
+      renderList();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) loadImageFile(e.target.files[0]);
+});
+
+['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault(); dropzone.classList.add('over');
+}));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault(); dropzone.classList.remove('over');
+}));
+dropzone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) loadImageFile(f);
+});
+
+function render() {
+  if (!image) {
+    ctx.fillStyle = '#8882';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  zones.forEach((z, i) => {
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2277cc';
+    ctx.stroke();
+    ctx.fillStyle = '#2277cc';
+    ctx.font = `bold ${Math.max(14, z.size * 0.3)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(i + 1, z.x, z.y);
+  });
+}
+
+function pointerToImageCoords(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (evt.clientX - rect.left) * scaleX;
+  const cy = (evt.clientY - rect.top) * scaleY;
+  return { x: cx, y: cy };
+}
+
+function zoneAt(x, y) {
+  for (let i = zones.length - 1; i >= 0; i--) {
+    const z = zones[i];
+    if (Math.hypot(z.x - x, z.y - y) <= z.size / 2) return z;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (!image) return;
+  const { x, y } = pointerToImageCoords(e);
+  const hit = zoneAt(x, y);
+  if (hit) {
+    dragging = hit;
+  } else {
+    const defaultSize = Math.round(canvas.width * 0.08);
+    const z = { id: `zone${zoneSeq++}`, label: '', text: '', x, y, size: defaultSize };
+    zones.push(z);
+    render();
+    renderList();
+    dragging = z;
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const { x, y } = pointerToImageCoords(e);
+  dragging.x = Math.round(x);
+  dragging.y = Math.round(y);
+  render();
+});
+window.addEventListener('mouseup', () => { dragging = null; renderList(); });
+
+function renderList() {
+  zoneList.innerHTML = '';
+  zoneCount.textContent = zones.length;
+  noZoneHint.style.display = zones.length ? 'none' : 'block';
+  zones.forEach((z, i) => {
+    const div = document.createElement('div');
+    div.className = 'zone';
+    div.innerHTML = `
+      <div class="zone-head">
+        <span>#${i + 1}</span>
+        <input type="text" data-f="id" value="${escapeAttr(z.id)}" style="flex:1">
+        <button class="del" title="löschen">&times;</button>
+      </div>
+      <label>Label (kurz, auf dem Marker)
+        <input type="text" data-f="label" value="${escapeAttr(z.label)}">
+      </label>
+      <label>Erklärtext (wird gesprochen)
+        <textarea data-f="text">${escapeHtml(z.text)}</textarea>
+      </label>
+      <label>Grösse (px): <span data-f="sizeOut">${z.size}</span>
+        <input type="number" data-f="size" value="${z.size}" min="20" step="5">
+      </label>
+    `;
+    div.querySelector('[data-f=id]').addEventListener('input', e => { z.id = e.target.value; });
+    div.querySelector('[data-f=label]').addEventListener('input', e => { z.label = e.target.value; render(); });
+    div.querySelector('[data-f=text]').addEventListener('input', e => { z.text = e.target.value; });
+    div.querySelector('[data-f=size]').addEventListener('input', e => {
+      z.size = Math.max(10, parseInt(e.target.value) || z.size);
+      div.querySelector('[data-f=sizeOut]').textContent = z.size;
+      render();
+    });
+    div.querySelector('.del').addEventListener('click', () => {
+      zones = zones.filter(zz => zz !== z);
+      render(); renderList();
+    });
+    zoneList.appendChild(div);
+  });
+}
+
+function escapeHtml(s) { return (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+
+document.getElementById('exportJson').addEventListener('click', () => {
+  if (!image) { alert('Zuerst ein Bild laden.'); return; }
+  const data = {
+    productId: parseInt(document.getElementById('productId').value) || 9001,
+    title: document.getElementById('title').value,
+    imageFile: imageName,
+    imageWidth: canvas.width,
+    imageHeight: canvas.height,
+    zones: zones.map(z => ({ id: z.id, label: z.label, text: z.text, x: z.x, y: z.y, size: z.size }))
+  };
+  downloadBlob(JSON.stringify(data, null, 2), 'layout.json', 'application/json');
+});
+
+document.getElementById('exportPreview').addEventListener('click', () => {
+  if (!image) { alert('Zuerst ein Bild laden.'); return; }
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'vorschau-mit-markern.png'; a.click();
+    URL.revokeObjectURL(url);
+  });
+});
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+render();
+</script>
+</body>
+</html>
