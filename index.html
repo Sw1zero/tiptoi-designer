@@ -291,6 +291,12 @@ function insideImage(x, y) {
   return imgRect && x >= imgRect.x && x <= imgRect.x + imgRect.w && y >= imgRect.y && y <= imgRect.y + imgRect.h;
 }
 
+// Snapt auf die Mitte der Rasterzelle (nicht auf die Gitterlinien-Kreuzung), damit der
+// Marker sauber innerhalb einer Zelle sitzt statt über vier Zellen hinweg zentriert zu sein.
+function snapToCellCenter(v, origin, step) {
+  return origin + (Math.floor((v - origin) / step) + 0.5) * step;
+}
+
 canvas.addEventListener('mousedown', e => {
   if (!image) return;
   const { x, y } = pointerToPageCoords(e);
@@ -306,8 +312,8 @@ canvas.addEventListener('mousedown', e => {
     if (step > 3) {
       // Raster beginnt an der Bildkante (imgRect), nicht am Seitenursprung --
       // sonst klafft das Raster bei Bildern, die nicht exakt zu A4 passen (Letterboxing).
-      zx = imgRect.x + Math.round((x - imgRect.x) / step) * step;
-      zy = imgRect.y + Math.round((y - imgRect.y) / step) * step;
+      zx = snapToCellCenter(x, imgRect.x, step);
+      zy = snapToCellCenter(y, imgRect.y, step);
     }
   }
   const z = { id: `zone${zoneSeq++}`, label: '', text: '', x: zx, y: zy };
@@ -327,8 +333,8 @@ window.addEventListener('mouseup', () => {
   if (dragging && document.getElementById('snapGrid').checked) {
     const step = codeSizePx();
     if (step > 3) {
-      dragging.x = imgRect.x + Math.round((dragging.x - imgRect.x) / step) * step;
-      dragging.y = imgRect.y + Math.round((dragging.y - imgRect.y) / step) * step;
+      dragging.x = snapToCellCenter(dragging.x, imgRect.x, step);
+      dragging.y = snapToCellCenter(dragging.y, imgRect.y, step);
       render();
     }
   }
