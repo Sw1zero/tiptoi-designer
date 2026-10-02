@@ -88,16 +88,27 @@ def build_yaml(data: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def paste_code(base: Image.Image, draw: ImageDraw.ImageDraw, code_path: Path,
-                cx: int, cy: int, label: str | None = None):
+def paste_code(base: Image.Image, code_path: Path, cx: int, cy: int):
+    """Echter Druck-Code: tttool liefert die Codes bereits mit Alpha-Transparenz
+    (nur die Punkte selbst sind undurchsichtig). Direkt so übers Bild legen --
+    kein weisser Kasten drumherum, genau wie bei echten Tiptoi-Büchern, wo die
+    Codes unauffällig auf der bunten Illustration liegen."""
     code_img = Image.open(code_path).convert("RGBA")  # native Grösse, kein resize()
+    w, h = code_img.size
+    base.paste(code_img, (cx - w // 2, cy - h // 2), code_img)
+
+
+def paste_code_debug(base: Image.Image, draw: ImageDraw.ImageDraw, code_path: Path,
+                      cx: int, cy: int, label: str):
+    """Nur für die Kontroll-Vorschau: Kasten + Beschriftung, damit man vor dem
+    Drucken sieht, wo die Codes tatsächlich landen. Nicht die Druckvorlage!"""
+    code_img = Image.open(code_path).convert("RGBA")
     w, h = code_img.size
     pad = max(4, w // 10)
     box = [cx - w // 2 - pad, cy - h // 2 - pad, cx + w // 2 + pad, cy + h // 2 + pad]
-    draw.rectangle(box, fill="white", outline="black", width=2)
+    draw.rectangle(box, outline="red", width=2)
     base.paste(code_img, (cx - w // 2, cy - h // 2), code_img)
-    if label:
-        draw.text((cx, box[3] + 4), label, fill="black", anchor="ma")
+    draw.text((cx, box[3] + 4), label, fill="red", anchor="ma")
 
 
 def main():
@@ -136,28 +147,26 @@ def main():
     )
 
     # A4-Seite aufbauen: weisser Hintergrund, Foto contain-gefittet in den Inhaltsbereich.
-    page = Image.new("RGB", (PAGE_W, PAGE_H), "white")
+    artwork = Image.new("RGB", (PAGE_W, PAGE_H), "white")
     photo = Image.open(image_path).convert("RGB")
     rect = fit_rect(photo.width, photo.height)
     resized = photo.resize((round(rect["w"]), round(rect["h"])), Image.LANCZOS)
-    page.paste(resized, (round(rect["x"]), round(rect["y"])))
+    artwork.paste(resized, (round(rect["x"]), round(rect["y"])))
 
-    draw = ImageDraw.Draw(page)
+    positions = []  # [(code_file, x, y, label)], fuer beide Varianten gemeinsam genutzt
     for i, f in enumerate(data["fields"]):
         code_file = out_dir / f"oid-{data['productId']}-{f['id']}.png"
         label = f"Feld {i + 1}"
-        # Positionen kommen bereits in Seiten-Pixeln aus dem Designer (gleiches Layout).
         for pos in f["positions"]:
-            paste_code(page, draw, code_file, int(pos["x"]), int(pos["y"]), label)
-
+            positions.append((code_file, int(pos["x"]), int(pos["y"]), label))
     for btn in control_button_centers():
-        # tttool benennt die Sonder-Codes START/REPLAY/STOP
-        code_file = out_dir / f"oid-{data['productId']}-{btn['label']}.png"
-        paste_code(page, draw, code_file, round(btn["x"]), round(btn["y"]), btn["label"])
+        code_file = out_dir / f"oid-{data['productId']}-{btn['label']}.png"  # tttool-Sondernamen
+        positions.append((code_file, round(btn["x"]), round(btn["y"]), btn["label"]))
 
-    draw.rectangle([CONTENT["x"], CONTENT["y"], CONTENT["x"] + CONTENT["w"], CONTENT["y"] + CONTENT["h"]],
-                    outline="#ccc", width=1)
-    draw.line([FOOTER["x"], FOOTER["y"], FOOTER["x"] + FOOTER["w"], FOOTER["y"]], fill="#ccc", width=1)
+    # Echte Druckvorlage: Codes unauffaellig direkt auf dem Bild, wie bei echten Tiptoi-Buechern.
+    page = artwork.copy()
+    for code_file, x, y, _ in positions:
+        paste_code(page, code_file, x, y)
 
     out_png = out_dir / "druckvorlage.png"
     page.save(out_png, dpi=(PAGE_DPI, PAGE_DPI))
@@ -166,6 +175,19 @@ def main():
     out_pdf = out_dir / "druckvorlage.pdf"
     page.save(out_pdf, resolution=PAGE_DPI)
     print(f"geschrieben: {out_pdf}")
+
+    # Nur zur Kontrolle vorm Drucken: dieselbe Seite mit roten Kaestchen + Beschriftung,
+    # damit man sieht wo die Codes effektiv liegen. NICHT drucken/ausgeben.
+    debug_page = artwork.copy()
+    debug_draw = ImageDraw.Draw(debug_page)
+    for code_file, x, y, label in positions:
+        paste_code_debug(debug_page, debug_draw, code_file, x, y, label)
+    debug_draw.rectangle([CONTENT["x"], CONTENT["y"], CONTENT["x"] + CONTENT["w"], CONTENT["y"] + CONTENT["h"]],
+                          outline="#ccc", width=1)
+    debug_draw.line([FOOTER["x"], FOOTER["y"], FOOTER["x"] + FOOTER["w"], FOOTER["y"]], fill="#ccc", width=1)
+    out_debug = out_dir / "kontrolle-mit-markierungen.png"
+    debug_page.save(out_debug, dpi=(PAGE_DPI, PAGE_DPI))
+    print(f"geschrieben: {out_debug} (nur zur Kontrolle, nicht drucken)")
 
     print("\nFertig. GME auf den Stift kopieren.")
     print("PDF in Originalgrösse (100%) drucken, NICHT 'An Seite anpassen' — sonst werden die Codes mitskaliert und unlesbar.")
