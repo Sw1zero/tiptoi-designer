@@ -16,11 +16,14 @@ Tiptoi-Lernspiele. Läuft komplett lokal im Browser, kein Server nötig.
 4. Pro Zone: Label (kurz, sichtbar) und Erklärtext (wird später gesprochen) eintragen
 5. "Layout als JSON herunterladen"
 
-**Mehrere Zonen mit demselben Code:** Zwei oder mehr Zonen können dieselbe ID
-bekommen (im Feld neben der Nummer in der Zonen-Liste) — sie bekommen dann
-denselben gedruckten Code und lösen dieselbe Erklärung aus, nur an
-verschiedenen Stellen im Bild platziert (z.B. vier gleichwertige Ecken eines
-Diagramms).
+**Mehrere Zonen mit demselben Code:** Im Feld "Teilt Code & Erklärung mit"
+kann eine Zone eine andere, bereits bestehende Zone auswählen — beide
+bekommen dann denselben gedruckten Code und lösen dieselbe Erklärung aus,
+nur an verschiedenen Stellen im Bild platziert (z.B. mehrere gleichwertige
+Teile eines Diagramms). Die verlinkte Zone bekommt dafür kein
+eigenes Erklärtext-Feld mehr (ausgegraut) — der Text kommt immer von der
+Zone, die ausgewählt wurde. Löscht man diese Zone, werden alle, die auf sie
+verweisen, automatisch wieder zu eigenständigen Zonen.
 
 Die Seite ist immer A4 bei 300dpi, unten fest eine Fussleiste mit
 **Start / Wiederholen / Stopp** (plus ein reservierter, noch ungenutzter
