@@ -6,19 +6,28 @@ Tiptoi-Lernspiele. Läuft komplett lokal im Browser, kein Server nötig.
 ## Nutzung
 
 1. `index.html` öffnen (lokal per Doppelklick, oder gehostet z.B. über GitHub Pages)
-2. Bild laden (Drag & Drop oder Dateiauswahl)
-3. **Zielbreite beim Drucken (mm)** prüfen/anpassen — wie breit das ganze Bild
-   später gedruckt wird. Daraus berechnet der Designer, wie das Raster und die
-   Marker in echten Millimetern aussehen, unabhängig von der Pixelgrösse des
-   Fotos (ein 200×200px-Handyfoto und ein 1900×2200px-Scan funktionieren
-   gleich, solange die Zielbreite stimmt)
-4. Auf das Bild klicken, um eine Zone zu setzen (rastet standardmässig am
+2. Bild laden (Drag & Drop oder Dateiauswahl) — wird automatisch in die A4-Seite
+   eingepasst (contain-fit, Seitenverhältnis bleibt erhalten, kein Verzerren)
+3. Auf das Bild klicken, um eine Zone zu setzen (rastet standardmässig am
    Raster ein). Marker lassen sich per Drag verschieben.
-5. Pro Zone: Label (kurz, sichtbar) und Erklärtext (wird später gesprochen) eintragen
-6. "Layout als JSON herunterladen"
+4. Pro Zone: Label (kurz, sichtbar) und Erklärtext (wird später gesprochen) eintragen
+5. "Layout als JSON herunterladen"
 
-Die JSON-Datei enthält die exakten Pixelkoordinaten jeder Zone im
-Originalbild — kein Schätzen, keine manuelle Koordinatensuche.
+Die Seite ist immer A4 bei 300dpi, unten fest eine Fussleiste mit
+**Start / Wiederholen / Stopp** (plus ein reservierter, noch ungenutzter
+vierter Platz für einen künftigen Modus-Button, siehe unten). Die JSON-Datei
+enthält die exakten Pixelkoordinaten jeder Zone auf dieser Seite — kein
+Schätzen, keine manuelle Koordinatensuche, unabhängig von der Pixelgrösse
+des hochgeladenen Fotos.
+
+### Geplant, noch nicht gebaut: Modus-Button
+
+Ein vierter Button in der Fussleiste ist im Layout reserviert (sichtbar als
+gestrichelter Platzhalter "MODUS (folgt)"), aber ohne Funktion. Die Idee:
+pro Zone mehrere Inhalte (z.B. Erklärung / Wissens-Fakt / Spiel) hinterlegen
+und per Tipp auf diesen Button umschalten — wie bei den originalen
+Ravensburger-Büchern. Braucht einen grösseren Umbau des Datenmodells, kommt
+als eigener Schritt, sobald klar ist, welche Modi tatsächlich gebraucht werden.
 
 ### Wie gross darf der Code sein?
 

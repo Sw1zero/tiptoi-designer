@@ -23,7 +23,7 @@
   #dropzone { border: 2px dashed #8886; border-radius: 10px; padding: 24px; text-align: center; font-size: 0.85rem; }
   #dropzone.over { border-color: #39c; background: #39c2; }
   #canvasWrap { position: relative; max-width: 100%; }
-  canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 1px 6px #0003; cursor: crosshair; }
+  canvas { max-width: 100%; height: auto; display: block; box-shadow: 0 1px 6px #0003; cursor: crosshair; background: white; }
   .hint { font-size: 0.75rem; opacity: 0.7; margin-top: 2px; }
   .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
   .actions button { padding: 8px; font-size: 0.85rem; }
@@ -32,7 +32,7 @@
 <body>
 <div id="sidebar">
   <h1>Tiptoi Zonen-Designer</h1>
-  <p class="hint">Bild laden, auf das Bild klicken um eine Zone zu setzen, Marker zum Verschieben ziehen. Jede Zone bekommt einen Erklärtext, der später per Sprachausgabe abgespielt wird.</p>
+  <p class="hint">Seite ist fest A4. Bild laden (wird automatisch eingepasst), auf das Bild klicken um eine Zone zu setzen, Marker zum Verschieben ziehen. Start/Wiederholen/Stopp stehen immer unten auf der Seite.</p>
 
   <fieldset>
     <legend>Projekt</legend>
@@ -46,11 +46,7 @@
     <label>Code-Grösse (mm)
       <input type="number" id="codeSizeMm" value="25" min="5" max="100">
     </label>
-    <p class="hint">Echte physische Grösse des gedruckten Punktmusters (das Muster wiederholt sich fein innerhalb dieser Fläche, darum funktionieren auch kleine wie grosse Werte). Gilt für alle Zonen gleich. Nicht nachträglich im Bild verzerren/skalieren, sonst liest der Stift den Code nicht mehr.</p>
-    <label>Zielbreite beim Drucken (mm)
-      <input type="number" id="targetWidthMm" value="200" min="10" step="1">
-    </label>
-    <p class="hint">Wie breit das <strong>ganze Bild</strong> später gedruckt wird. Nur damit lässt sich Raster/Markergrösse unabhängig von der Pixelgrösse deines Fotos korrekt in echten mm berechnen — egal ob dein Bild 200×200px oder 1900×2200px hat. Faustregel: Bildbreite (px) ÷ 210 = maximal sinnvolle Zielbreite (mm) — sonst meldet der Build-Schritt "zu wenig dpi".</p>
+    <p class="hint">Echte physische Grösse des gedruckten Punktmusters (das Muster wiederholt sich fein innerhalb dieser Fläche, darum funktionieren auch kleine wie grosse Werte). Gilt für alle Inhalts-Zonen gleich. Nicht nachträglich im Bild verzerren/skalieren, sonst liest der Stift den Code nicht mehr.</p>
     <label>Marker-Form (nur optisch, ändert den Code selbst nicht)
       <select id="markerShape">
         <option value="circle">Kreis</option>
@@ -71,19 +67,62 @@
 
   <div class="actions">
     <button id="exportJson">Layout als JSON herunterladen</button>
-    <button id="exportPreview">Bild mit Markierungen herunterladen</button>
+    <button id="exportPreview">Seite als Bild herunterladen</button>
   </div>
-  <p class="hint">Die JSON-Datei wird lokal mit tttool zu einer fertigen Tiptoi-Datei (GME) und einer Druckvorlage mit den echten Punktcodes verarbeitet.</p>
+  <p class="hint">Die JSON-Datei wird lokal mit tttool zu einer fertigen Tiptoi-Datei (GME) und einer A4-Druckvorlage mit den echten Punktcodes verarbeitet.</p>
 </div>
 
 <div id="main">
   <div id="canvasWrap">
-    <canvas id="canvas" width="800" height="600"></canvas>
+    <canvas id="canvas"></canvas>
   </div>
 </div>
 
 <script>
+// Seiten-Layout: fix A4 bei 300dpi. Dieselben Konstanten muss build_project.py verwenden.
+const PAGE_DPI = 300;
+const MM = PAGE_DPI / 25.4;
+const PAGE_W_MM = 210, PAGE_H_MM = 297;
+const MARGIN_MM = 10;
+const FOOTER_H_MM = 35;
+
+const PAGE_W = Math.round(PAGE_W_MM * MM);
+const PAGE_H = Math.round(PAGE_H_MM * MM);
+const CONTENT = {
+  x: MARGIN_MM * MM,
+  y: MARGIN_MM * MM,
+  w: (PAGE_W_MM - 2 * MARGIN_MM) * MM,
+  h: (PAGE_H_MM - 2 * MARGIN_MM - FOOTER_H_MM) * MM,
+};
+const FOOTER = {
+  x: MARGIN_MM * MM,
+  y: (PAGE_H_MM - MARGIN_MM - FOOTER_H_MM) * MM,
+  w: (PAGE_W_MM - 2 * MARGIN_MM) * MM,
+  h: FOOTER_H_MM * MM,
+};
+// 4 Slots in der Fussleiste: Start, Wiederholen, Stopp, Modus (reserviert, noch ohne Logik)
+const FOOTER_BUTTONS = ['START', 'WIEDERHOLEN', 'STOPP', 'MODUS (folgt)'];
+
+function controlButtonCenters() {
+  const n = FOOTER_BUTTONS.length;
+  const cy = FOOTER.y + FOOTER.h / 2;
+  return FOOTER_BUTTONS.map((label, i) => ({
+    label,
+    x: FOOTER.x + FOOTER.w * (i + 0.5) / n,
+    y: cy,
+    enabled: label !== 'MODUS (folgt)',
+  }));
+}
+
+function fitRect(naturalW, naturalH) {
+  const scale = Math.min(CONTENT.w / naturalW, CONTENT.h / naturalH);
+  const w = naturalW * scale, h = naturalH * scale;
+  return { x: CONTENT.x + (CONTENT.w - w) / 2, y: CONTENT.y + (CONTENT.h - h) / 2, w, h };
+}
+
 const canvas = document.getElementById('canvas');
+canvas.width = PAGE_W;
+canvas.height = PAGE_H;
 const ctx = canvas.getContext('2d');
 const zoneList = document.getElementById('zoneList');
 const zoneCount = document.getElementById('zoneCount');
@@ -92,22 +131,17 @@ const dropzone = document.getElementById('dropzone');
 
 let image = null;
 let imageName = '';
-let zones = []; // {id, label, text, x, y} -- x/y in natural image pixels
-let dragging = null; // zone being dragged
+let imgRect = null; // {x,y,w,h} des eingepassten Bilds auf der Seite
+let zones = []; // {id, label, text, x, y} -- x/y in Seiten-Pixeln (px bei 300dpi)
+let dragging = null;
 let zoneSeq = 1;
-
-function pxPerMm() {
-  const targetWidthMm = parseFloat(document.getElementById('targetWidthMm').value) || 200;
-  return canvas.width / targetWidthMm;
-}
 
 function codeSizePx() {
   const codeSizeMm = parseFloat(document.getElementById('codeSizeMm').value) || 25;
-  return codeSizeMm * pxPerMm();
+  return codeSizeMm * MM;
 }
 
 function markerRadius() {
-  // echte Druckgrösse des Codes, nicht nur ein UI-Platzhalter
   return Math.max(6, codeSizePx() / 2);
 }
 
@@ -118,12 +152,8 @@ function loadImageFile(file) {
     img.onload = () => {
       image = img;
       imageName = file.name;
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      imgRect = fitRect(img.naturalWidth, img.naturalHeight);
       zones = [];
-      // Grobe Startannahme: Bild entspricht ~250dpi bei Originalgrösse (tttool braucht min. ~210dpi
-      // fuer saubere Codes, darum nicht niedriger ansetzen). Nur ein Vorschlag, anpassbar.
-      document.getElementById('targetWidthMm').value = Math.round(img.naturalWidth / 250 * 25.4);
       render();
       renderList();
     };
@@ -147,24 +177,69 @@ dropzone.addEventListener('drop', e => {
   if (f) loadImageFile(f);
 });
 
-function render() {
-  if (!image) {
-    ctx.fillStyle = '#8882';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    return;
+function drawBadge(cx, cy, w, shape, label, enabled) {
+  const pad = Math.max(4, w * 0.1);
+  ctx.strokeStyle = enabled ? '#2277cc' : '#999';
+  ctx.setLineDash(enabled ? [] : [6, 4]);
+  if (shape === 'square') {
+    const box = [cx - w / 2 - pad, cy - w / 2 - pad, w + pad * 2, w + pad * 2];
+    ctx.fillStyle = enabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.03)';
+    ctx.fillRect(box[0], box[1], box[2], box[3]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(box[0], box[1], box[2], box[3]);
+  } else {
+    const r = (w / 2) * 1.414 + pad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = enabled ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.03)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  ctx.setLineDash([]);
+  if (label) {
+    ctx.fillStyle = enabled ? '#222' : '#999';
+    ctx.font = `bold ${Math.max(12, w * 0.18)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, cx, cy + w / 2 + pad + 4);
+  }
+}
 
-  if (document.getElementById('showGrid').checked) {
+function render() {
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Seitenrand + Fussleiste zur Orientierung
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(CONTENT.x, CONTENT.y, CONTENT.w, CONTENT.h);
+  ctx.beginPath();
+  ctx.moveTo(FOOTER.x, FOOTER.y);
+  ctx.lineTo(FOOTER.x + FOOTER.w, FOOTER.y);
+  ctx.stroke();
+
+  if (image && imgRect) {
+    ctx.drawImage(image, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
+  } else {
+    ctx.fillStyle = '#8882';
+    ctx.fillRect(CONTENT.x, CONTENT.y, CONTENT.w, CONTENT.h);
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    ctx.font = '24px sans-serif';
+    ctx.fillText('Bild laden …', CONTENT.x + CONTENT.w / 2, CONTENT.y + CONTENT.h / 2);
+  }
+
+  if (document.getElementById('showGrid').checked && image) {
     const step = codeSizePx();
     if (step > 3) {
       ctx.strokeStyle = 'rgba(255,80,0,0.5)';
       ctx.lineWidth = 1;
-      for (let gx = 0; gx <= canvas.width; gx += step) {
-        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, canvas.height); ctx.stroke();
+      for (let gx = imgRect.x; gx <= imgRect.x + imgRect.w; gx += step) {
+        ctx.beginPath(); ctx.moveTo(gx, imgRect.y); ctx.lineTo(gx, imgRect.y + imgRect.h); ctx.stroke();
       }
-      for (let gy = 0; gy <= canvas.height; gy += step) {
-        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+      for (let gy = imgRect.y; gy <= imgRect.y + imgRect.h; gy += step) {
+        ctx.beginPath(); ctx.moveTo(imgRect.x, gy); ctx.lineTo(imgRect.x + imgRect.w, gy); ctx.stroke();
       }
     }
   }
@@ -189,15 +264,17 @@ function render() {
     ctx.textBaseline = 'middle';
     ctx.fillText(i + 1, z.x, z.y);
   });
+
+  controlButtonCenters().forEach(b => {
+    drawBadge(b.x, b.y, codeSizePx(), shape, b.label, b.enabled);
+  });
 }
 
-function pointerToImageCoords(evt) {
+function pointerToPageCoords(evt) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
-  const cx = (evt.clientX - rect.left) * scaleX;
-  const cy = (evt.clientY - rect.top) * scaleY;
-  return { x: cx, y: cy };
+  return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
 }
 
 function zoneAt(x, y) {
@@ -209,31 +286,36 @@ function zoneAt(x, y) {
   return null;
 }
 
+function insideImage(x, y) {
+  return imgRect && x >= imgRect.x && x <= imgRect.x + imgRect.w && y >= imgRect.y && y <= imgRect.y + imgRect.h;
+}
+
 canvas.addEventListener('mousedown', e => {
   if (!image) return;
-  const { x, y } = pointerToImageCoords(e);
+  const { x, y } = pointerToPageCoords(e);
   const hit = zoneAt(x, y);
   if (hit) {
     dragging = hit;
-  } else {
-    let zx = x, zy = y;
-    if (document.getElementById('snapGrid').checked) {
-      const step = codeSizePx();
-      if (step > 3) {
-        zx = Math.round(x / step) * step;
-        zy = Math.round(y / step) * step;
-      }
-    }
-    const z = { id: `zone${zoneSeq++}`, label: '', text: '', x: zx, y: zy };
-    zones.push(z);
-    render();
-    renderList();
-    dragging = z;
+    return;
   }
+  if (!insideImage(x, y)) return; // nur auf dem Bild neue Zonen setzen
+  let zx = x, zy = y;
+  if (document.getElementById('snapGrid').checked) {
+    const step = codeSizePx();
+    if (step > 3) {
+      zx = Math.round(x / step) * step;
+      zy = Math.round(y / step) * step;
+    }
+  }
+  const z = { id: `zone${zoneSeq++}`, label: '', text: '', x: zx, y: zy };
+  zones.push(z);
+  render();
+  renderList();
+  dragging = z;
 });
 window.addEventListener('mousemove', e => {
   if (!dragging) return;
-  const { x, y } = pointerToImageCoords(e);
+  const { x, y } = pointerToPageCoords(e);
   dragging.x = Math.round(x);
   dragging.y = Math.round(y);
   render();
@@ -282,7 +364,7 @@ function renderList() {
   });
 }
 
-['codeSizeMm', 'targetWidthMm', 'markerShape', 'showGrid', 'snapGrid'].forEach(id => {
+['codeSizeMm', 'markerShape', 'showGrid', 'snapGrid'].forEach(id => {
   document.getElementById(id).addEventListener('input', render);
 });
 
@@ -295,11 +377,9 @@ document.getElementById('exportJson').addEventListener('click', () => {
     productId: parseInt(document.getElementById('productId').value) || 9001,
     title: document.getElementById('title').value,
     codeSizeMm: parseFloat(document.getElementById('codeSizeMm').value) || 25,
-    targetWidthMm: parseFloat(document.getElementById('targetWidthMm').value) || 200,
     markerShape: document.getElementById('markerShape').value,
     imageFile: imageName,
-    imageWidth: canvas.width,
-    imageHeight: canvas.height,
+    pageDpi: PAGE_DPI,
     zones: zones.map(z => ({ id: z.id, label: z.label, text: z.text, x: z.x, y: z.y }))
   };
   downloadBlob(JSON.stringify(data, null, 2), 'layout.json', 'application/json');
@@ -310,7 +390,7 @@ document.getElementById('exportPreview').addEventListener('click', () => {
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'vorschau-mit-markern.png'; a.click();
+    a.href = url; a.download = 'seite-vorschau.png'; a.click();
     URL.revokeObjectURL(url);
   });
 });

@@ -1,3 +1,4 @@
 tts-cache/
 oid-*.png
 *.gme
+__pycache__/

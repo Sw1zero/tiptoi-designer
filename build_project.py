@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Baut aus layout.json (vom Zonen-Designer) + Originalbild eine Tiptoi-GME-Datei
-und eine Druckvorlage mit echten OID-Codes.
+und eine fertige A4-Druckvorlage mit echten OID-Codes, inklusive Start/Wiederholen/Stopp.
 
 ponytail: ein Script, kein Paket. tttool macht Codes+GME, wir machen nur das Compositing.
 
-Wichtig: Der OID-Code wird von tttool in einer festen physischen Grösse (mm) bei
-PRINT_DPI erzeugt und 1:1 (ohne Resize) eingefügt. Nachträgliches Skalieren würde
-den Punktabstand verzerren und den Code für den Stift unlesbar machen.
+Seiten-Layout ist fix A4 bei PAGE_DPI -- dieselben Konstanten wie in index.html,
+damit die im Designer geklickten Positionen 1:1 auf der gedruckten Seite landen.
+
+Wichtig: Der OID-Code wird von tttool in einer festen physischen Grösse (mm) erzeugt
+und 1:1 (ohne Resize) eingefügt. Nachträgliches Skalieren würde den Punktabstand
+verzerren und den Code für den Stift unlesbar machen. Das Originalfoto dagegen wird
+ganz normal skaliert (contain-fit) -- das ist nur Dekoration, kein Code.
 
 Aufruf:
   python3 build_project.py layout.json bild.jpg ausgabe-ordner/
@@ -20,7 +24,49 @@ from PIL import Image, ImageDraw
 
 TTTOOL = Path(__file__).resolve().parent.parent / "demo" / "tttool-1.11" / "tttool"
 MM_PER_INCH = 25.4
-MIN_DPI = 210  # gemessen: tttool verweigert Codes unterhalb von ~201dpi ("Dots too large"), mit Marge
+MIN_DPI = 210  # gemessen: tttool verweigert Codes unterhalb von ~201dpi ("Dots too large")
+
+# Seiten-Layout -- muss zu den Konstanten in index.html passen.
+PAGE_DPI = 300
+MM = PAGE_DPI / MM_PER_INCH
+PAGE_W_MM, PAGE_H_MM = 210, 297
+MARGIN_MM = 10
+FOOTER_H_MM = 35
+
+PAGE_W = round(PAGE_W_MM * MM)
+PAGE_H = round(PAGE_H_MM * MM)
+CONTENT = {
+    "x": MARGIN_MM * MM,
+    "y": MARGIN_MM * MM,
+    "w": (PAGE_W_MM - 2 * MARGIN_MM) * MM,
+    "h": (PAGE_H_MM - 2 * MARGIN_MM - FOOTER_H_MM) * MM,
+}
+FOOTER = {
+    "x": MARGIN_MM * MM,
+    "y": (PAGE_H_MM - MARGIN_MM - FOOTER_H_MM) * MM,
+    "w": (PAGE_W_MM - 2 * MARGIN_MM) * MM,
+    "h": FOOTER_H_MM * MM,
+}
+FOOTER_BUTTONS = ["START", "REPLAY", "STOP"]  # "Modus"-Slot folgt spaeter, hier bewusst weggelassen
+
+
+def fit_rect(natural_w: float, natural_h: float) -> dict:
+    scale = min(CONTENT["w"] / natural_w, CONTENT["h"] / natural_h)
+    w, h = natural_w * scale, natural_h * scale
+    return {
+        "x": CONTENT["x"] + (CONTENT["w"] - w) / 2,
+        "y": CONTENT["y"] + (CONTENT["h"] - h) / 2,
+        "w": w, "h": h,
+    }
+
+
+def control_button_centers() -> list[dict]:
+    n = len(FOOTER_BUTTONS) + 1  # +1 reservierter, leerer "Modus"-Slot, siehe index.html
+    cy = FOOTER["y"] + FOOTER["h"] / 2
+    return [
+        {"label": label, "x": FOOTER["x"] + FOOTER["w"] * (i + 0.5) / n, "y": cy}
+        for i, label in enumerate(FOOTER_BUTTONS)
+    ]
 
 
 def build_yaml(data: dict) -> str:
@@ -75,19 +121,9 @@ def main():
 
     code_size_mm = data.get("codeSizeMm", 25)
     shape = data.get("markerShape", "circle")
-    target_width_mm = data.get("targetWidthMm", 200)
-    # dpi des gesamten Projekts: wie viele Pixel im Designer-Bild einem Zoll beim Druck
-    # entsprechen. Daraus leiten sich sowohl die Code-Erzeugung als auch die PDF-Seitengrösse
-    # konsistent ab -- unabhängig von der tatsächlichen Pixelzahl des Originalbilds.
-    dpi = round(data["imageWidth"] / target_width_mm * MM_PER_INCH)
-    if dpi < MIN_DPI:
-        max_width_mm = data["imageWidth"] / MIN_DPI * MM_PER_INCH
-        sys.exit(
-            f"Zielbreite {target_width_mm}mm ergibt nur {dpi}dpi — zu wenig, tttool braucht mindestens "
-            f"{MIN_DPI}dpi für saubere Codes.\n"
-            f"Entweder im Designer die Zielbreite auf höchstens {max_width_mm:.0f}mm verkleinern "
-            f"(Bild wird dann kleiner gedruckt), oder ein höher aufgelöstes Originalbild verwenden."
-        )
+
+    if PAGE_DPI < MIN_DPI:
+        sys.exit(f"PAGE_DPI ({PAGE_DPI}) liegt unter dem von tttool verlangten Minimum ({MIN_DPI}).")
 
     yaml_text = build_yaml(data)
     yaml_path = out_dir / "projekt.yaml"
@@ -98,41 +134,41 @@ def main():
     subprocess.run([str(TTTOOL), "assemble", str(yaml_path), str(gme_path)], check=True, cwd=out_dir)
     print(f"geschrieben: {gme_path}")
 
-    print(f"Projekt-DPI: {dpi} (aus Zielbreite {target_width_mm}mm für {data['imageWidth']}px)")
     subprocess.run(
-        [str(TTTOOL), "--code-dim", str(code_size_mm), "--dpi", str(dpi), "--pixel-size", "1",
+        [str(TTTOOL), "--code-dim", str(code_size_mm), "--dpi", str(PAGE_DPI), "--pixel-size", "1",
          "-f", "PNG", "oid-codes", str(yaml_path)],
         check=True, cwd=out_dir,
     )
 
-    base = Image.open(image_path).convert("RGB")
-    if (base.width, base.height) != (data["imageWidth"], data["imageHeight"]):
-        print("Warnung: Bildgrösse weicht vom Designer-Export ab, skaliere nur die Positionen (nicht die Codes).")
-        sx = base.width / data["imageWidth"]
-        sy = base.height / data["imageHeight"]
-    else:
-        sx = sy = 1.0
+    # A4-Seite aufbauen: weisser Hintergrund, Foto contain-gefittet in den Inhaltsbereich.
+    page = Image.new("RGB", (PAGE_W, PAGE_H), "white")
+    photo = Image.open(image_path).convert("RGB")
+    rect = fit_rect(photo.width, photo.height)
+    resized = photo.resize((round(rect["w"]), round(rect["h"])), Image.LANCZOS)
+    page.paste(resized, (round(rect["x"]), round(rect["y"])))
 
-    draw = ImageDraw.Draw(base)
+    draw = ImageDraw.Draw(page)
+    img_x0, img_y0 = round(rect["x"]), round(rect["y"])
     for z in data["zones"]:
         code_file = out_dir / f"oid-{data['productId']}-{z['id']}.png"
-        cx, cy = int(z["x"] * sx), int(z["y"] * sy)
-        paste_code(base, draw, code_file, cx, cy, shape, z.get("label"))
+        # Zonen-Koordinaten kommen bereits in Seiten-Pixeln aus dem Designer (gleiches Layout).
+        paste_code(page, draw, code_file, int(z["x"]), int(z["y"]), shape, z.get("label"))
 
-    start_file = out_dir / f"oid-{data['productId']}-START.png"
-    start_w, _ = Image.open(start_file).size
-    sx0, sy0 = 10 + start_w // 2, 10 + start_w // 2
-    paste_code(base, draw, start_file, sx0, sy0, shape, "START")
+    for btn in control_button_centers():
+        # tttool benennt die Sonder-Codes START/REPLAY/STOP
+        code_file = out_dir / f"oid-{data['productId']}-{btn['label']}.png"
+        paste_code(page, draw, code_file, round(btn["x"]), round(btn["y"]), shape, btn["label"])
+
+    draw.rectangle([CONTENT["x"], CONTENT["y"], CONTENT["x"] + CONTENT["w"], CONTENT["y"] + CONTENT["h"]],
+                    outline="#ccc", width=1)
+    draw.line([FOOTER["x"], FOOTER["y"], FOOTER["x"] + FOOTER["w"], FOOTER["y"]], fill="#ccc", width=1)
 
     out_png = out_dir / "druckvorlage.png"
-    base.save(out_png, dpi=(dpi, dpi))
-    print(f"geschrieben: {out_png} ({base.width}x{base.height}px @ {dpi} dpi"
-          f" = {base.width / dpi * MM_PER_INCH:.0f}x{base.height / dpi * MM_PER_INCH:.0f}mm)")
+    page.save(out_png, dpi=(PAGE_DPI, PAGE_DPI))
+    print(f"geschrieben: {out_png} (A4 @ {PAGE_DPI}dpi)")
 
     out_pdf = out_dir / "druckvorlage.pdf"
-    # resolution in DPI an save() ergibt bei PDF die physische Seitengrösse direkt aus den Pixeln,
-    # keine nachträgliche Skalierung noetig.
-    base.save(out_pdf, resolution=dpi)
+    page.save(out_pdf, resolution=PAGE_DPI)
     print(f"geschrieben: {out_pdf}")
 
     print("\nFertig. GME auf den Stift kopieren.")
